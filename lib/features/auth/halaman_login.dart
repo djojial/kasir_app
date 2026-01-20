@@ -27,7 +27,7 @@ class HalamanLogin extends StatefulWidget {
 
 class _HalamanLoginState extends State<HalamanLogin> {
   final _emailC = TextEditingController(text: 'muhammaddjojial@gmail.com');
-  final _passC = TextEditingController(text: 'hebatkali'); //wahyujaya
+  final _passC = TextEditingController(text: 'hebatkali'); //wahyujaya ac
   bool _loading = false;
   String? _error;
   String? _statusMessage;
