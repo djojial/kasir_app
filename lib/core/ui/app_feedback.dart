@@ -11,6 +11,35 @@ enum AppFeedbackType {
 class AppFeedback {
   static OverlayEntry? _toastEntry;
   static OverlayEntry? _loadingEntry;
+  static String? _pendingMessage;
+  static AppFeedbackType _pendingType = AppFeedbackType.info;
+  static Duration _pendingDuration = const Duration(seconds: 3);
+
+  static void queue({
+    required String message,
+    AppFeedbackType type = AppFeedbackType.info,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    _pendingMessage = message;
+    _pendingType = type;
+    _pendingDuration = duration;
+  }
+
+  static void flushQueued(BuildContext context) {
+    final message = _pendingMessage;
+    if (message == null) return;
+    final type = _pendingType;
+    final duration = _pendingDuration;
+    _pendingMessage = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      show(
+        context,
+        message: message,
+        type: type,
+        duration: duration,
+      );
+    });
+  }
 
   static void show(
     BuildContext context, {
@@ -18,8 +47,10 @@ class AppFeedback {
     AppFeedbackType type = AppFeedbackType.info,
     Duration duration = const Duration(seconds: 3),
   }) {
-    _toastEntry?.remove();
-    final overlay = Overlay.of(context);
+    if (_toastEntry?.mounted ?? false) {
+      _toastEntry?.remove();
+    }
+    final overlay = Overlay.of(context, rootOverlay: true);
     if (overlay == null) return;
 
     final colors = _colorsFor(type);
@@ -74,7 +105,9 @@ class AppFeedback {
     overlay.insert(entry);
     _toastEntry = entry;
     Timer(duration, () {
-      entry.remove();
+      if (entry.mounted) {
+        entry.remove();
+      }
       if (_toastEntry == entry) {
         _toastEntry = null;
       }
@@ -86,7 +119,7 @@ class AppFeedback {
     String message = 'Memproses...',
   }) {
     hideLoading();
-    final overlay = Overlay.of(context);
+    final overlay = Overlay.of(context, rootOverlay: true);
     if (overlay == null) return;
 
     final entry = OverlayEntry(
@@ -141,7 +174,9 @@ class AppFeedback {
   }
 
   static void hideLoading() {
-    _loadingEntry?.remove();
+    if (_loadingEntry?.mounted ?? false) {
+      _loadingEntry?.remove();
+    }
     _loadingEntry = null;
   }
 

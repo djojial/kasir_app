@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="kasir_app"
+        android:label="Nira POS"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

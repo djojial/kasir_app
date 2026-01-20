@@ -83,18 +83,10 @@ class _HalamanLoginState extends State<HalamanLogin> {
         });
         if (!_successToastScheduled) {
           _successToastScheduled = true;
-          Future.delayed(const Duration(milliseconds: 200), () {
-            if (!mounted) return;
-            _successToastScheduled = false;
-            if (HalamanLogin.pendingMessage != null) return;
-            if (_showPendingToast) return;
-            if (FirebaseAuth.instance.currentUser == null) return;
-            AppFeedback.show(
-              context,
-              message: 'Login berhasil',
-              type: AppFeedbackType.success,
-            );
-          });
+          AppFeedback.queue(
+            message: 'Login berhasil',
+            type: AppFeedbackType.success,
+          );
         }
       }
     } on FirebaseAuthException catch (e) {

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/produk_model.dart';
 import '../models/transaksi_model.dart';
@@ -12,6 +15,30 @@ class FirestoreService {
   CollectionReference get _transaksiItemRef => _db.collection('transaksi_items');
   CollectionReference get _stokLogRef => _db.collection('stok_log');
   CollectionReference get _usersRef => _db.collection('users');
+
+  bool get _usePolling =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  Stream<T> _pollWithCache<T>({
+    required Future<T> Function() load,
+    Future<T> Function()? loadCache,
+    Duration interval = const Duration(seconds: 4),
+    bool emitNullCache = false,
+  }) async* {
+    if (loadCache != null) {
+      try {
+        final cached = await loadCache();
+        if (emitNullCache || cached != null) {
+          yield cached;
+        }
+      } catch (_) {}
+    }
+    yield await load();
+    await for (final _ in Stream<int>.periodic(interval, (tick) => tick)) {
+      yield await load();
+    }
+  }
+
 
   // ===============================
   // PRODUK
@@ -39,6 +66,35 @@ class FirestoreService {
 
   /// AMBIL SEMUA PRODUK
   Stream<List<Produk>> ambilSemuaProduk() {
+    if (_usePolling) {
+      return _pollWithCache(
+        load: () async {
+          final snap =
+              await _produkRef.orderBy('dibuat_pada', descending: true).get();
+          return snap.docs
+              .map(
+                (d) => Produk.dariMap(
+                  d.data() as Map<String, dynamic>,
+                  d.id,
+                ),
+              )
+              .toList();
+        },
+        loadCache: () async {
+          final snap = await _produkRef
+              .orderBy('dibuat_pada', descending: true)
+              .get(const GetOptions(source: Source.cache));
+          return snap.docs
+              .map(
+                (d) => Produk.dariMap(
+                  d.data() as Map<String, dynamic>,
+                  d.id,
+                ),
+              )
+              .toList();
+        },
+      );
+    }
     return _produkRef
         .orderBy('dibuat_pada', descending: true)
         .snapshots()
@@ -175,6 +231,35 @@ class FirestoreService {
   }) async {
     final ref = _produkRef.doc(produk.id);
 
+    if (_usePolling) {
+      final snap = await ref.get();
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final stokAwal = (data['stok'] ?? 0) as int;
+      final stokAkhir = stokAwal - qty;
+
+      await ref.update({'stok': stokAkhir});
+
+      final log = StokLog(
+        produkId: produk.id!,
+        namaProduk: produk.nama,
+        perubahan: -qty,
+        stokAkhir: stokAkhir,
+        tipe: 'keluar',
+        waktu: Timestamp.now(),
+      ).toMap();
+
+      log['sumber'] = sumber;
+      if (refId != null) {
+        log['refId'] = refId;
+      }
+      log['harga_modal'] = produk.hargaModal;
+      log['harga_jual'] = hargaJualOverride ?? produk.harga;
+
+      await _stokLogRef.add(log);
+      return;
+    }
+
     await _db.runTransaction((trx) async {
       final snap = await trx.get(ref);
       final stokAwal = snap['stok'] as int;
@@ -225,10 +310,10 @@ class FirestoreService {
   }
 
   Stream<List<Transaksi>> streamSemuaTransaksi() {
-    return _transaksiItemRef.snapshots().map((snap) {
+    List<Transaksi> buildList(List<QueryDocumentSnapshot> docs) {
       final Map<String, List<Map<String, dynamic>>> grouped = {};
 
-      for (final doc in snap.docs) {
+      for (final doc in docs) {
         final data = doc.data() as Map<String, dynamic>;
         final transaksiId = data['transaksiId'] as String?;
         if (transaksiId == null) continue;
@@ -283,7 +368,23 @@ class FirestoreService {
 
       list.sort((a, b) => b.tanggal.compareTo(a.tanggal));
       return list;
-    });
+    }
+
+    if (_usePolling) {
+      return _pollWithCache(
+        load: () async {
+          final snap = await _transaksiItemRef.get();
+          return buildList(snap.docs);
+        },
+        loadCache: () async {
+          final snap = await _transaksiItemRef
+              .get(const GetOptions(source: Source.cache));
+          return buildList(snap.docs);
+        },
+      );
+    }
+
+    return _transaksiItemRef.snapshots().map((snap) => buildList(snap.docs));
   }
 
   // ===============================
@@ -293,12 +394,33 @@ class FirestoreService {
   Stream<int> streamJumlahTransaksi() =>
       streamSemuaTransaksi().map((l) => l.length);
 
-  Stream<int> streamItemTerjual() => _transaksiItemRef.snapshots().map(
-        (snap) => snap.docs.fold(
-          0,
-          (sum, doc) => sum + ((doc['qty'] ?? 0) as int),
-        ),
+  Stream<int> streamItemTerjual() {
+    if (_usePolling) {
+      return _pollWithCache(
+        load: () async {
+          final snap = await _transaksiItemRef.get();
+          return snap.docs.fold<int>(
+            0,
+            (sum, doc) => sum + ((doc['qty'] ?? 0) as int),
+          );
+        },
+        loadCache: () async {
+          final snap = await _transaksiItemRef
+              .get(const GetOptions(source: Source.cache));
+          return snap.docs.fold<int>(
+            0,
+            (sum, doc) => sum + ((doc['qty'] ?? 0) as int),
+          );
+        },
       );
+    }
+    return _transaksiItemRef.snapshots().map(
+          (snap) => snap.docs.fold<int>(
+            0,
+            (sum, doc) => sum + ((doc['qty'] ?? 0) as int),
+          ),
+        );
+  }
 
   Stream<int> streamPendapatan() => streamSemuaTransaksi()
       .map((list) => list.fold(0, (s, t) => s + t.total));
@@ -369,10 +491,10 @@ class FirestoreService {
   // ===============================
 
   Stream<List<Map<String, dynamic>>> streamRekapStokAkuntansi() {
-    return _stokLogRef.orderBy('waktu').snapshots().map((snap) {
+    List<Map<String, dynamic>> buildList(List<QueryDocumentSnapshot> docs) {
       final Map<String, Map<String, dynamic>> rekap = {};
 
-      for (final d in snap.docs) {
+      for (final d in docs) {
         final data = d.data() as Map<String, dynamic>;
         final id = data['produk_id'];
         if (id == null) continue;
@@ -401,10 +523,48 @@ class FirestoreService {
       }
 
       return rekap.values.toList();
-    });
+    }
+
+    if (_usePolling) {
+      return _pollWithCache(
+        load: () async {
+          final snap = await _stokLogRef.orderBy('waktu').get();
+          return buildList(snap.docs);
+        },
+        loadCache: () async {
+          final snap = await _stokLogRef
+              .orderBy('waktu')
+              .get(const GetOptions(source: Source.cache));
+          return buildList(snap.docs);
+        },
+      );
+    }
+
+    return _stokLogRef
+        .orderBy('waktu')
+        .snapshots()
+        .map((snap) => buildList(snap.docs));
   }
 
   Stream<List<Map<String, dynamic>>> streamStokLog() {
+    if (_usePolling) {
+      return _pollWithCache(
+        load: () async {
+          final snap = await _stokLogRef.orderBy('waktu', descending: true).get();
+          return snap.docs
+              .map((d) => Map<String, dynamic>.from(d.data() as Map))
+              .toList();
+        },
+        loadCache: () async {
+          final snap = await _stokLogRef
+              .orderBy('waktu', descending: true)
+              .get(const GetOptions(source: Source.cache));
+          return snap.docs
+              .map((d) => Map<String, dynamic>.from(d.data() as Map))
+              .toList();
+        },
+      );
+    }
     return _stokLogRef.orderBy('waktu', descending: true).snapshots().map(
           (snap) => snap.docs
               .map((d) => Map<String, dynamic>.from(d.data() as Map))
@@ -413,6 +573,24 @@ class FirestoreService {
   }
 
   Stream<String?> streamUserRole(String uid) {
+    if (_usePolling) {
+      return _pollWithCache(
+        load: () async {
+          final doc = await _usersRef.doc(uid).get();
+          if (!doc.exists) return null;
+          final data = doc.data() as Map<String, dynamic>;
+          return (data['role'] ?? 'operator').toString().toLowerCase();
+        },
+        loadCache: () async {
+          final doc = await _usersRef
+              .doc(uid)
+              .get(const GetOptions(source: Source.cache));
+          if (!doc.exists) return null;
+          final data = doc.data() as Map<String, dynamic>;
+          return (data['role'] ?? 'operator').toString().toLowerCase();
+        },
+      );
+    }
     return _usersRef.doc(uid).snapshots().map((doc) {
       if (!doc.exists) return null;
       final data = doc.data() as Map<String, dynamic>;
@@ -425,7 +603,8 @@ class FirestoreService {
     String uid, {
     String? email,
   }) {
-    return _usersRef.doc(uid).snapshots().asyncMap((doc) async {
+    Future<Map<String, dynamic>?> load() async {
+      final doc = await _usersRef.doc(uid).get();
       if (doc.exists) {
         return {
           'id': doc.id,
@@ -433,36 +612,93 @@ class FirestoreService {
         };
       }
 
-      final lookupEmail = (email ?? '').toLowerCase();
+      final emailRaw = (email ?? '').trim();
+      final lookupEmail = emailRaw.toLowerCase();
       if (lookupEmail.isEmpty) return null;
 
-      final q = await _usersRef
+      QuerySnapshot q = await _usersRef
           .where('email', isEqualTo: lookupEmail)
           .limit(1)
           .get();
+      if (q.docs.isEmpty && emailRaw.isNotEmpty && emailRaw != lookupEmail) {
+        q = await _usersRef.where('email', isEqualTo: emailRaw).limit(1).get();
+      }
       if (q.docs.isEmpty) return null;
 
       final alt = q.docs.first;
       final data = alt.data() as Map<String, dynamic>;
       if (alt.id != uid) {
-        await _usersRef.doc(uid).set({
-          ...data,
-          'email': lookupEmail,
-          'updatedAt': Timestamp.now(),
-        }, SetOptions(merge: true));
-        await _usersRef.doc(alt.id).delete();
-        return {
-          'id': uid,
-          ...data,
-          'email': lookupEmail,
-        };
+        try {
+          await _usersRef.doc(uid).set({
+            ...data,
+            'email': lookupEmail,
+            'updatedAt': Timestamp.now(),
+          }, SetOptions(merge: true));
+          await _usersRef.doc(alt.id).delete();
+          return {
+            'id': uid,
+            ...data,
+            'email': lookupEmail,
+          };
+        } catch (_) {
+          // Fallback when migration is blocked by rules/permissions.
+          return {
+            'id': alt.id,
+            ...data,
+            'email': data['email'] ?? lookupEmail,
+          };
+        }
       }
 
       return {
         'id': alt.id,
         ...data,
       };
-    });
+    }
+
+    if (_usePolling) {
+      Future<Map<String, dynamic>?> loadCache() async {
+        final doc = await _usersRef
+            .doc(uid)
+            .get(const GetOptions(source: Source.cache));
+        if (doc.exists) {
+          return {
+            'id': doc.id,
+            ...(doc.data() as Map<String, dynamic>),
+          };
+        }
+
+        final emailRaw = (email ?? '').trim();
+        final lookupEmail = emailRaw.toLowerCase();
+        if (lookupEmail.isEmpty) return null;
+
+        QuerySnapshot q = await _usersRef
+            .where('email', isEqualTo: lookupEmail)
+            .limit(1)
+            .get(const GetOptions(source: Source.cache));
+        if (q.docs.isEmpty && emailRaw.isNotEmpty && emailRaw != lookupEmail) {
+          q = await _usersRef
+              .where('email', isEqualTo: emailRaw)
+              .limit(1)
+              .get(const GetOptions(source: Source.cache));
+        }
+        if (q.docs.isEmpty) return null;
+
+        final alt = q.docs.first;
+        final data = alt.data() as Map<String, dynamic>;
+        return {
+          'id': alt.id,
+          ...data,
+        };
+      }
+
+      return _pollWithCache(
+        load: load,
+        loadCache: loadCache,
+        emitNullCache: false,
+      );
+    }
+    return _usersRef.doc(uid).snapshots().asyncMap((_) => load());
   }
 
   Future<void> upsertUserRole({
@@ -497,7 +733,8 @@ class FirestoreService {
   }
 
   Stream<List<Map<String, dynamic>>> streamUsers() {
-    return _usersRef.snapshots().map((snap) {
+    Future<List<Map<String, dynamic>>> load() async {
+      final snap = await _usersRef.get();
       final users = snap.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         final email = (data['email'] ?? '').toString();
@@ -515,7 +752,35 @@ class FirestoreService {
         return aEmail.compareTo(bEmail);
       });
       return users;
-    });
+    }
+
+    if (_usePolling) {
+      Future<List<Map<String, dynamic>>> loadCache() async {
+        final snap =
+            await _usersRef.get(const GetOptions(source: Source.cache));
+        final users = snap.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final email = (data['email'] ?? '').toString();
+          final fallbackEmail =
+              email.isNotEmpty ? email : (doc.id.contains('@') ? doc.id : '');
+          return {
+            'id': doc.id,
+            ...data,
+            if (fallbackEmail.isNotEmpty) 'email': fallbackEmail,
+          };
+        }).toList();
+        users.sort((a, b) {
+          final aEmail = (a['email'] ?? '').toString().toLowerCase();
+          final bEmail = (b['email'] ?? '').toString().toLowerCase();
+          return aEmail.compareTo(bEmail);
+        });
+        return users;
+      }
+
+      return _pollWithCache(load: load, loadCache: loadCache);
+    }
+
+    return _usersRef.snapshots().asyncMap((_) => load());
   }
 
   Future<void> hapusUser(String uid) async {

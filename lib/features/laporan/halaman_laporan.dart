@@ -9,12 +9,12 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/ui/interactive_widgets.dart';
 import '../../database/models/produk_model.dart';
 import '../../database/services/firestore_service.dart';
 import '../../utils/pdf_download.dart';
+import '../../utils/pdf_save.dart';
 
 class HalamanLaporan extends StatefulWidget {
   const HalamanLaporan({super.key});
@@ -53,6 +53,15 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
   void dispose() {
     _tanggalC.dispose();
     super.dispose();
+  }
+
+  void _snack(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+      ),
+    );
   }
 
   Future<void> _pilihRentangTanggal() async {
@@ -381,12 +390,13 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       await savePdfBytesWeb(bytes, filename);
       return;
     }
-    final xfile = XFile.fromData(
-      bytes,
-      name: filename,
-      mimeType: 'application/pdf',
-    );
-    await Share.shareXFiles([xfile], text: 'Laporan');
+    final savedPath = await savePdfToDownloads(bytes, filename);
+    if (!mounted) return;
+    if (savedPath == null) {
+      _snack('Gagal menyimpan otomatis', Colors.red);
+      return;
+    }
+    _snack('PDF tersimpan di Downloads', Colors.green);
   }
 
   bool _logDalamRentang(Map<String, dynamic> log) {
@@ -1579,4 +1589,3 @@ List<BoxShadow> _luxShadow(BuildContext context) {
     ),
   ];
 }
-

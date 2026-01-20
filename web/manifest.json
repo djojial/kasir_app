@@ -1,6 +1,6 @@
 {
-    "name": "kasir_app",
-    "short_name": "kasir_app",
+    "name": "Nira POS",
+    "short_name": "Nira POS",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

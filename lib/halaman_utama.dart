@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'features/transaksi/halaman_pos.dart';
@@ -13,6 +14,7 @@ import 'database/models/transaksi_model.dart';
 import 'database/models/produk_model.dart';
 import 'core/theme_controller.dart';
 import 'core/ui/interactive_widgets.dart';
+import 'core/ui/app_feedback.dart';
 
 LinearGradient _pageGradient(bool isDark) => LinearGradient(
       begin: Alignment.topLeft,
@@ -190,6 +192,10 @@ class _HalamanUtamaState extends State<HalamanUtama> {
   void initState() {
     super.initState();
     _jalankanMigrasiTransaksiItems();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      AppFeedback.flushQueued(context);
+    });
   }
 
   void _jalankanMigrasiTransaksiItems() {
@@ -561,6 +567,16 @@ class _TopBarState extends State<_TopBar> {
   late DateTime _now;
   Timer? _timer;
 
+  Stream<User?> _authStream() {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      return Stream<User?>.periodic(
+        const Duration(seconds: 2),
+        (_) => FirebaseAuth.instance.currentUser,
+      ).distinct((a, b) => a?.uid == b?.uid);
+    }
+    return FirebaseAuth.instance.authStateChanges();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -703,7 +719,7 @@ class _TopBarState extends State<_TopBar> {
           }
 
           final userChip = StreamBuilder<User?>(
-            stream: FirebaseAuth.instance.authStateChanges(),
+            stream: _authStream(),
             builder: (context, snapshot) {
               final user = snapshot.data;
               final name = user?.displayName;

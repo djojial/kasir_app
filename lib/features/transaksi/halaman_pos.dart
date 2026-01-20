@@ -15,6 +15,7 @@ import '../../database/models/produk_model.dart';
 import '../../database/models/transaksi_model.dart';
 import '../../database/services/firestore_service.dart';
 import '../../utils/pdf_download.dart';
+import '../../utils/pdf_save.dart';
 import 'halaman_scan.dart';
 
 class HalamanPOS extends StatefulWidget {
@@ -146,58 +147,70 @@ class _HalamanPOSState extends State<HalamanPOS> {
   Future<void> _commitPembayaran(_PaymentResult payment) async {
     if (keranjang.isEmpty) return;
 
-    for (final item in keranjang) {
-      final aman = await firestore.cekStokAman(
-        produkId: item.produk.id!,
-        qty: item.qty,
-      );
-
-      if (!aman) {
-        _snack(
-          "Stok ${item.produk.nama} tidak mencukupi",
-          Colors.red,
+    try {
+      for (final item in keranjang) {
+        final produkId = item.produk.id;
+        if (produkId == null || produkId.isEmpty) {
+          _snack('Produk tidak memiliki ID.', Colors.red);
+          return;
+        }
+        final aman = await firestore.cekStokAman(
+          produkId: produkId,
+          qty: item.qty,
         );
-        return;
+
+        if (!aman) {
+          _snack(
+            "Stok ${item.produk.nama} tidak mencukupi",
+            Colors.red,
+          );
+          return;
+        }
       }
-    }
 
-    for (final item in keranjang) {
-      item['paymentMethod'] = payment.method;
-      item['paidAmount'] = payment.paidAmount;
-      item['change'] = payment.change;
-    }
+      for (final item in keranjang) {
+        item['paymentMethod'] = payment.method;
+        item['paidAmount'] = payment.paidAmount;
+        item['change'] = payment.change;
+      }
 
-    final transaksi = Transaksi(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      tanggal: DateTime.now(),
-      total: payment.total,
-      items: List.from(keranjang),
-    );
-
-    await firestore.simpanTransaksi(transaksi);
-
-    final baseTotal = totalBayar;
-    final ratio = baseTotal > 0 ? payment.total / baseTotal : 1.0;
-    for (final item in keranjang) {
-      final itemTotal = _itemTotal(item);
-      final effectiveTotal = (itemTotal * ratio).round();
-      final unitPrice =
-          item.qty > 0 ? (effectiveTotal / item.qty).round() : 0;
-      await firestore.kurangiStokDanCatatLog(
-        produk: item.produk,
-        qty: item.qty,
-        sumber: "POS",
-        refId: transaksi.id,
-        hargaJualOverride: unitPrice,
+      final transaksi = Transaksi(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        tanggal: DateTime.now(),
+        total: payment.total,
+        items: List.from(keranjang),
       );
+
+      await firestore.simpanTransaksi(transaksi);
+
+      final baseTotal = totalBayar;
+      final ratio = baseTotal > 0 ? payment.total / baseTotal : 1.0;
+      for (final item in keranjang) {
+        final itemTotal = _itemTotal(item);
+        final effectiveTotal = (itemTotal * ratio).round();
+        final unitPrice =
+            item.qty > 0 ? (effectiveTotal / item.qty).round() : 0;
+        await firestore.kurangiStokDanCatatLog(
+          produk: item.produk,
+          qty: item.qty,
+          sumber: "POS",
+          refId: transaksi.id,
+          hargaJualOverride: unitPrice,
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        keranjang.clear();
+      });
+
+      _showReceipt(transaksi, payment);
+      _snack("Transaksi berhasil", Colors.green);
+    } catch (e, _) {
+      debugPrint('Gagal proses pembayaran: $e');
+      if (!mounted) return;
+      _snack('Gagal memproses pembayaran.', Colors.red);
     }
-
-    setState(() {
-      keranjang.clear();
-    });
-
-    _showReceipt(transaksi, payment);
-    _snack("Transaksi berhasil", Colors.green);
   }
 
   Future<void> _openPaymentSheet() async {
@@ -270,167 +283,168 @@ class _HalamanPOSState extends State<HalamanPOS> {
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Theme.of(context).dividerColor),
                       ),
-                      child: SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.82,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.82,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                          Text(
-                            'Pembayaran',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 12),
-                          const SizedBox(height: 4),
-                          FocusTextField(
-                            controller: paidController,
-                            readOnly: true,
-                            onTap: () => setModalState(() {
-                              editingDiscount = false;
-                            }),
-                            decoration: const InputDecoration(
-                              labelText: 'Nominal dibayar',
-                              prefixIcon: Icon(Icons.payments_outlined),
+                            Text(
+                              'Pembayaran',
+                              style: Theme.of(context).textTheme.titleMedium,
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          FocusTextField(
-                            controller: discountController,
-                            readOnly: true,
-                            onTap: () => setModalState(() {
-                              editingDiscount = true;
-                            }),
-                            decoration: const InputDecoration(
-                              labelText: 'Diskon',
-                              prefixIcon: Icon(Icons.discount_outlined),
-                            ),
-                          ),
-                          if (method == 'Cash') ...[
                             const SizedBox(height: 12),
-                            GridView.count(
-                              crossAxisCount: 3,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              mainAxisSpacing: 10,
-                              crossAxisSpacing: 10,
-                              childAspectRatio: 2.4,
-                              children: [
-                                _KeypadButton(
-                                  label: '7',
-                                  onTap: () => applyDigit('7'),
-                                ),
-                                _KeypadButton(
-                                  label: '8',
-                                  onTap: () => applyDigit('8'),
-                                ),
-                                _KeypadButton(
-                                  label: '9',
-                                  onTap: () => applyDigit('9'),
-                                ),
-                                _KeypadButton(
-                                  label: '4',
-                                  onTap: () => applyDigit('4'),
-                                ),
-                                _KeypadButton(
-                                  label: '5',
-                                  onTap: () => applyDigit('5'),
-                                ),
-                                _KeypadButton(
-                                  label: '6',
-                                  onTap: () => applyDigit('6'),
-                                ),
-                                _KeypadButton(
-                                  label: '1',
-                                  onTap: () => applyDigit('1'),
-                                ),
-                                _KeypadButton(
-                                  label: '2',
-                                  onTap: () => applyDigit('2'),
-                                ),
-                                _KeypadButton(
-                                  label: '3',
-                                  onTap: () => applyDigit('3'),
-                                ),
-                                _KeypadButton(
-                                  label: 'C',
-                                  onTap: () => applyDigit('C'),
-                                  filled: true,
-                                  fillColor: const Color(0xFFEF4444),
-                                ),
-                                _KeypadButton(
-                                  label: '0',
-                                  onTap: () => applyDigit('0'),
-                                ),
-                                _KeypadButton(
-                                  label: '<',
-                                  onTap: () => applyDigit('<'),
-                                  filled: true,
-                                  fillColor: const Color(0xFFC76A1F),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-                          _SummaryRow(
-                            label: 'Total',
-                            value: _formatRupiah(totalAfterDiscount),
-                            emphasize: true,
-                          ),
-                          const SizedBox(height: 6),
-                          _SummaryRow(
-                            label: 'Diskon',
-                            value: _formatRupiah(discountAmount),
-                          ),
-                          const SizedBox(height: 6),
-                          _SummaryRow(
-                            label: 'Kembalian',
-                            value: _formatRupiah(change < 0 ? 0 : change),
-                          ),
-                          const SizedBox(height: 12),
-                          const Spacer(),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: HoverButton(
-                                  child: OutlinedButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child: const Text('Batal'),
-                                  ),
-                                ),
+                            const SizedBox(height: 4),
+                            FocusTextField(
+                              controller: paidController,
+                              readOnly: true,
+                              onTap: () => setModalState(() {
+                                editingDiscount = false;
+                              }),
+                              decoration: const InputDecoration(
+                                labelText: 'Nominal dibayar',
+                                prefixIcon: Icon(Icons.payments_outlined),
                               ),
-                              const SizedBox(width: 12),
+                            ),
+                            const SizedBox(height: 10),
+                            FocusTextField(
+                              controller: discountController,
+                              readOnly: true,
+                              onTap: () => setModalState(() {
+                                editingDiscount = true;
+                              }),
+                              decoration: const InputDecoration(
+                                labelText: 'Diskon',
+                                prefixIcon: Icon(Icons.discount_outlined),
+                              ),
+                            ),
+                            if (method == 'Cash') ...[
+                              const SizedBox(height: 12),
                               Expanded(
-                                child: HoverButton(
-                                  child: ElevatedButton(
-                                    onPressed: () {
-                                      if (method == 'Cash' &&
-                                          paidAmount < totalAfterDiscount) {
-                                        _snack('Uang belum cukup', Colors.orange);
-                                        return;
-                                      }
-                                      final finalPaid = method == 'Cash'
-                                          ? paidAmount
-                                          : (paidAmount == 0
-                                              ? totalAfterDiscount
-                                              : paidAmount);
-                                      Navigator.pop(
-                                        context,
-                                        _PaymentResult(
-                                          method: method,
-                                          paidAmount: finalPaid,
-                                          change: method == 'Cash'
-                                              ? (change < 0 ? 0 : change)
-                                              : 0,
-                                          discount: discountAmount,
-                                          total: totalAfterDiscount,
-                                        ),
-                                      );
-                                    },
-                                    child: const Text('Konfirmasi'),
-                                  ),
+                                child: GridView.count(
+                                  crossAxisCount: 3,
+                                  mainAxisSpacing: 10,
+                                  crossAxisSpacing: 10,
+                                  childAspectRatio: 2.4,
+                                  children: [
+                                    _KeypadButton(
+                                      label: '7',
+                                      onTap: () => applyDigit('7'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '8',
+                                      onTap: () => applyDigit('8'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '9',
+                                      onTap: () => applyDigit('9'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '4',
+                                      onTap: () => applyDigit('4'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '5',
+                                      onTap: () => applyDigit('5'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '6',
+                                      onTap: () => applyDigit('6'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '1',
+                                      onTap: () => applyDigit('1'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '2',
+                                      onTap: () => applyDigit('2'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '3',
+                                      onTap: () => applyDigit('3'),
+                                    ),
+                                    _KeypadButton(
+                                      label: 'C',
+                                      onTap: () => applyDigit('C'),
+                                      filled: true,
+                                      fillColor: const Color(0xFFEF4444),
+                                    ),
+                                    _KeypadButton(
+                                      label: '0',
+                                      onTap: () => applyDigit('0'),
+                                    ),
+                                    _KeypadButton(
+                                      label: '<',
+                                      onTap: () => applyDigit('<'),
+                                      filled: true,
+                                      fillColor: const Color(0xFFC76A1F),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
-                          ),
+                            const SizedBox(height: 12),
+                            _SummaryRow(
+                              label: 'Total',
+                              value: _formatRupiah(totalAfterDiscount),
+                              emphasize: true,
+                            ),
+                            const SizedBox(height: 6),
+                            _SummaryRow(
+                              label: 'Diskon',
+                              value: _formatRupiah(discountAmount),
+                            ),
+                            const SizedBox(height: 6),
+                            _SummaryRow(
+                              label: 'Kembalian',
+                              value: _formatRupiah(change < 0 ? 0 : change),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: HoverButton(
+                                    child: OutlinedButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text('Batal'),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: HoverButton(
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        if (method == 'Cash' &&
+                                            paidAmount < totalAfterDiscount) {
+                                          _snack('Uang belum cukup', Colors.orange);
+                                          return;
+                                        }
+                                        final finalPaid = method == 'Cash'
+                                            ? paidAmount
+                                            : (paidAmount == 0
+                                                ? totalAfterDiscount
+                                                : paidAmount);
+                                        Navigator.pop(
+                                          context,
+                                          _PaymentResult(
+                                            method: method,
+                                            paidAmount: finalPaid,
+                                            change: method == 'Cash'
+                                                ? (change < 0 ? 0 : change)
+                                                : 0,
+                                            discount: discountAmount,
+                                            total: totalAfterDiscount,
+                                          ),
+                                        );
+                                      },
+                                      child: const Text('Konfirmasi'),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
@@ -456,8 +470,10 @@ class _HalamanPOSState extends State<HalamanPOS> {
     final invoiceId = _formatInvoice(transaksi.id);
     final subtotal = _subtotalItems(transaksi.items);
     final diskonItems = _diskonItems(transaksi.items);
+    final maxDialogHeight = MediaQuery.of(context).size.height * 0.9;
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (context) {
         const namaToko = 'ATk Wahyu Jaya';
         const namaKasir = 'Kasir';
@@ -472,185 +488,191 @@ class _HalamanPOSState extends State<HalamanPOS> {
         return Dialog(
           backgroundColor: Colors.transparent,
           insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 320,
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: const Color(0xFFE3E3E3)),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'image/nira_posbaru.png',
-                        width: 140,
-                        fit: BoxFit.contain,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        namaToko,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Tiket $invoiceId'),
-                      Text('$tanggalStr, $jamStr'),
-                      Text('Dilayani oleh: $namaKasir'),
-                      const SizedBox(height: 14),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Column(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxDialogHeight),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 320,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: const Color(0xFFE3E3E3)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'image/nira_posbaru.png',
+                          width: 140,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          namaToko,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Text('Tiket $invoiceId'),
+                        Text('$tanggalStr, $jamStr'),
+                        Text('Dilayani oleh: $namaKasir'),
+                        const SizedBox(height: 14),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ...transaksi.items.map((item) {
+                                final produk = item.produk;
+                                final totalItem = _itemTotal(item);
+                                final harga = _itemHarga(item);
+                                return Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 6),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          SizedBox(
+                                            width: 20,
+                                            child: Text(
+                                              item.qty.toString(),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: Text(
+                                              produk.nama,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          Text(_formatRupiah(totalItem)),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 20),
+                                        child: Text(
+                                          '${_formatRupiah(harga)} / Unit',
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 8),
+                              _SummaryRow(
+                                label: 'Subtotal',
+                                value: _formatRupiah(subtotal),
+                              ),
+                              const SizedBox(height: 4),
+                              if (diskonItems > 0) ...[
+                                _SummaryRow(
+                                  label: 'Diskon Barang',
+                                  value: _formatRupiah(diskonItems),
+                                ),
+                                const SizedBox(height: 4),
+                              ],
+                              if (payment.discount > 0) ...[
+                                _SummaryRow(
+                                  label: 'Diskon Tambahan',
+                                  value: _formatRupiah(payment.discount),
+                                ),
+                                const SizedBox(height: 4),
+                              ],
+                              _SummaryRow(
+                                label: 'Pajak Barang',
+                                value: _formatRupiah(pajakBayar),
+                              ),
+                              const SizedBox(height: 4),
+                              _SummaryRow(
+                                label: 'Total',
+                                value: _formatRupiah(payment.total),
+                                emphasize: true,
+                              ),
+                              const SizedBox(height: 4),
+                              _SummaryRow(
+                                label: 'Kas',
+                                value: _formatRupiah(payment.paidAmount),
+                              ),
+                              const SizedBox(height: 4),
+                              _SummaryRow(
+                                label: 'Kembalian',
+                                value: _formatRupiah(payment.change),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ...transaksi.items.map((item) {
-                              final produk = item.produk;
-                              final totalItem = _itemTotal(item);
-                              final harga = _itemHarga(item);
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        SizedBox(
-                                          width: 20,
-                                          child: Text(
-                                            item.qty.toString(),
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            produk.nama,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                        Text(_formatRupiah(totalItem)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 20),
-                                      child: Text(
-                                        '${_formatRupiah(harga)} / Unit',
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                            const SizedBox(height: 8),
-                            _SummaryRow(
-                              label: 'Subtotal',
-                              value: _formatRupiah(subtotal),
-                            ),
-                            const SizedBox(height: 4),
-                            if (diskonItems > 0) ...[
-                              _SummaryRow(
-                                label: 'Diskon Barang',
-                                value: _formatRupiah(diskonItems),
+                            Container(
+                              width: 110,
+                              height: 110,
+                              decoration: BoxDecoration(
+                                border:
+                                    Border.all(color: const Color(0xFFE3E3E3)),
                               ),
-                              const SizedBox(height: 4),
-                            ],
-                            if (payment.discount > 0) ...[
-                              _SummaryRow(
-                                label: 'Diskon Tambahan',
-                                value: _formatRupiah(payment.discount),
+                              child: const Center(
+                                child: Icon(Icons.qr_code_2, size: 68),
                               ),
-                              const SizedBox(height: 4),
-                            ],
-                            _SummaryRow(
-                              label: 'Pajak Barang',
-                              value: _formatRupiah(pajakBayar),
                             ),
-                            const SizedBox(height: 4),
-                            _SummaryRow(
-                              label: 'Total',
-                              value: _formatRupiah(payment.total),
-                              emphasize: true,
-                            ),
-                            const SizedBox(height: 4),
-                            _SummaryRow(
-                              label: 'Kas',
-                              value: _formatRupiah(payment.paidAmount),
-                            ),
-                            const SizedBox(height: 4),
-                            _SummaryRow(
-                              label: 'Kembalian',
-                              value: _formatRupiah(payment.change),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Butuh faktur?'),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    qrUrl,
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text('Kode: $qrKode'),
+                                ],
+                              ),
                             ),
                           ],
                         ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      HoverButton(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Tutup'),
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 110,
-                            height: 110,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: const Color(0xFFE3E3E3)),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.qr_code_2, size: 68),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Butuh faktur?'),
-                                const SizedBox(height: 6),
-                                Text(
-                                  qrUrl,
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                const SizedBox(height: 6),
-                                Text('Kode: $qrKode'),
-                              ],
-                            ),
-                          ),
-                        ],
+                      const SizedBox(width: 12),
+                      HoverButton(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _showPrintOptions(transaksi, payment),
+                          icon: const Icon(Icons.print),
+                          label: const Text('Cetak Resi'),
+                        ),
                       ),
-                      const SizedBox(height: 8),
                     ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  HoverButton(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Tutup'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  HoverButton(
-                    child: ElevatedButton.icon(
-                      onPressed: () => _showPrintOptions(transaksi, payment),
-                      icon: const Icon(Icons.print),
-                      label: const Text('Cetak Resi'),
-                    ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         );
       },
@@ -661,6 +683,8 @@ class _HalamanPOSState extends State<HalamanPOS> {
     Transaksi transaksi,
     _PaymentResult payment,
   ) async {
+    final isWindows =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
     await showModalBottomSheet<void>(
       context: context,
       builder: (context) {
@@ -680,7 +704,9 @@ class _HalamanPOSState extends State<HalamanPOS> {
                 leading: const Icon(Icons.picture_as_pdf_outlined),
                 title: const Text('PDF (Email/WhatsApp)'),
                 subtitle: const Text('Bagikan file PDF struk'),
-                onTap: () async {
+                onTap: isWindows
+                    ? null
+                    : () async {
                   Navigator.pop(context);
                   await _shareReceiptPdf(transaksi, payment);
                 },
@@ -703,7 +729,9 @@ class _HalamanPOSState extends State<HalamanPOS> {
                 leading: const Icon(Icons.print_disabled_outlined),
                 title: const Text('Bluetooth Printer'),
                 subtitle: const Text('Cetak ke printer thermal'),
-                onTap: () async {
+                onTap: isWindows
+                    ? null
+                    : () async {
                   Navigator.pop(context);
                   await _printBluetooth(transaksi, payment);
                 },
@@ -937,30 +965,36 @@ class _HalamanPOSState extends State<HalamanPOS> {
       );
       final bytes = await doc.save();
       final filename = '${_formatInvoice(transaksi.id)}.pdf';
-      final location = await fs.getSaveLocation(
-        suggestedName: filename,
-        acceptedTypeGroups: [
-          const fs.XTypeGroup(
-            label: 'PDF',
-            extensions: ['pdf'],
-            mimeTypes: ['application/pdf'],
-          ),
-        ],
-      );
-      if (location == null) {
+      final savedPath = await savePdfToDownloads(bytes, filename);
+      if (savedPath == null) {
+        final location = await fs.getSaveLocation(
+          suggestedName: filename,
+          acceptedTypeGroups: [
+            const fs.XTypeGroup(
+              label: 'PDF',
+              extensions: ['pdf'],
+              mimeTypes: ['application/pdf'],
+            ),
+          ],
+        );
+        if (location == null) {
+          if (!mounted) return;
+          _snack('Penyimpanan dibatalkan', Colors.orange);
+          return;
+        }
+        final path = location.path;
+        final xfile = XFile.fromData(
+          bytes,
+          name: filename,
+          mimeType: 'application/pdf',
+        );
+        await xfile.saveTo(path);
         if (!mounted) return;
-        _snack('Penyimpanan dibatalkan', Colors.orange);
+        _snack('PDF tersimpan', Colors.green);
         return;
       }
-      final path = location.path;
-      final xfile = XFile.fromData(
-        bytes,
-        name: filename,
-        mimeType: 'application/pdf',
-      );
-      await xfile.saveTo(path);
       if (!mounted) return;
-      _snack('PDF tersimpan', Colors.green);
+      _snack('PDF tersimpan di Downloads', Colors.green);
     } catch (e) {
       if (!mounted) return;
       _snack('Gagal simpan PDF', Colors.red);
@@ -971,6 +1005,10 @@ class _HalamanPOSState extends State<HalamanPOS> {
     Transaksi transaksi,
     _PaymentResult payment,
   ) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      _snack('Bagikan PDF belum tersedia di Windows', Colors.orange);
+      return;
+    }
     try {
       final doc = await _buildReceiptPdf(
         transaksi: transaksi,
@@ -1200,12 +1238,56 @@ class _HalamanPOSState extends State<HalamanPOS> {
         padding: const EdgeInsets.all(24),
         child: StreamBuilder<List<Produk>>(
           stream: firestore.ambilSemuaProduk(),
+          initialData: const <Produk>[],
           builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              final errorText = snapshot.error?.toString() ?? 'Gagal memuat.';
+              debugPrint('Gagal memuat produk: $errorText');
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Gagal memuat produk.'),
+                    const SizedBox(height: 6),
+                    Text(
+                      errorText,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 8),
+                    HoverButton(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() {}),
+                        child: const Text('Muat ulang'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
 
             final produk = snapshot.data!;
+            if (produk.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Produk belum tersedia.'),
+                    const SizedBox(height: 8),
+                    HoverButton(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() {}),
+                        child: const Text('Muat ulang'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
             final kategoriSet = <String>{
               'Semua',
               ...produk
@@ -2082,6 +2164,56 @@ class _TransaksiTable extends StatelessWidget {
 
           final hasFiniteHeight = constraints.maxHeight.isFinite;
           final isShort = hasFiniteHeight && constraints.maxHeight < 520;
+          final summaryContent = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SummaryRow(
+                label: 'Subtotal',
+                value: _formatRupiah(subtotal),
+              ),
+              SizedBox(height: isShort ? 4 : 6),
+              _SummaryRow(
+                label: 'Diskon',
+                value: _formatRupiah(diskon),
+              ),
+              SizedBox(height: isShort ? 4 : 6),
+              _SummaryRow(
+                label: 'Pajak',
+                value: _formatRupiah(pajak),
+              ),
+              SizedBox(height: isShort ? 6 : 10),
+              const Divider(height: 1),
+              SizedBox(height: isShort ? 6 : 10),
+              _SummaryRow(
+                label: 'Total',
+                value: _formatRupiah(totalBayar),
+                emphasize: true,
+              ),
+              SizedBox(height: isShort ? 10 : 14),
+              SizedBox(
+                width: double.infinity,
+                child: HoverButton(
+                  child: ElevatedButton(
+                    onPressed: onBayar,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _posAccent,
+                      foregroundColor: Colors.black,
+                      padding: EdgeInsets.symmetric(
+                        vertical: isShort ? 8 : (isNarrow ? 10 : 12),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    child: const Text('Proses Pembayaran'),
+                  ),
+                ),
+              ),
+            ],
+          );
+
           final summarySection = Container(
             padding: EdgeInsets.all(isShort ? 10 : (isNarrow ? 10 : 12)),
             decoration: BoxDecoration(
@@ -2089,54 +2221,9 @@ class _TransaksiTable extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: border),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _SummaryRow(
-                  label: 'Subtotal',
-                  value: _formatRupiah(subtotal),
-                ),
-                SizedBox(height: isShort ? 4 : 6),
-                _SummaryRow(
-                  label: 'Diskon',
-                  value: _formatRupiah(diskon),
-                ),
-                SizedBox(height: isShort ? 4 : 6),
-                _SummaryRow(
-                  label: 'Pajak',
-                  value: _formatRupiah(pajak),
-                ),
-                SizedBox(height: isShort ? 6 : 10),
-                const Divider(height: 1),
-                SizedBox(height: isShort ? 6 : 10),
-                _SummaryRow(
-                  label: 'Total',
-                  value: _formatRupiah(totalBayar),
-                  emphasize: true,
-                ),
-                SizedBox(height: isShort ? 10 : 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: HoverButton(
-                    child: ElevatedButton(
-                      onPressed: onBayar,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _posAccent,
-                        foregroundColor: Colors.black,
-                        padding: EdgeInsets.symmetric(
-                          vertical: isShort ? 8 : (isNarrow ? 10 : 12),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      child: const Text('Proses Pembayaran'),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: isShort
+                ? SingleChildScrollView(child: summaryContent)
+                : summaryContent,
           );
 
           if (compact) {

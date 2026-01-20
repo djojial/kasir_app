@@ -16,6 +16,9 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
+# Keep a safe target name while preserving the default output exe name.
+set_target_properties(${BINARY_NAME} PROPERTIES OUTPUT_NAME_RELEASE "${BINARY_NAME}")
+
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})

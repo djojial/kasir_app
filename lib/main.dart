@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -328,7 +331,7 @@ class _MyAppState extends State<MyApp> {
           notifier: _themeMode,
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
-            title: "Kasir App",
+            title: "Nira POS",
             scaffoldMessengerKey: rootScaffoldMessengerKey,
             theme: lightTheme,
             darkTheme: darkTheme,
@@ -344,27 +347,65 @@ class _MyAppState extends State<MyApp> {
 class _AuthGate extends StatelessWidget {
   const _AuthGate();
 
+  bool get _useGracePeriod =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  Stream<User?> _authStream() {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      return _pollAuthState();
+    }
+    return FirebaseAuth.instance.authStateChanges();
+  }
+
+  Stream<User?> _pollAuthState() {
+    final controller = StreamController<User?>.broadcast();
+    Timer? timer;
+    User? lastUser;
+    var hasEmitted = false;
+
+    void emitCurrent() {
+      final current = FirebaseAuth.instance.currentUser;
+      if (!hasEmitted || current?.uid != lastUser?.uid) {
+        lastUser = current;
+        hasEmitted = true;
+        controller.add(current);
+      }
+    }
+
+    controller.onListen = () {
+      emitCurrent();
+      timer = Timer.periodic(const Duration(seconds: 2), (_) => emitCurrent());
+    };
+    controller.onCancel = () {
+      timer?.cancel();
+    };
+    return controller.stream;
+  }
+
   @override
   Widget build(BuildContext context) {
     final firestore = FirestoreService();
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: _authStream(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !_useGracePeriod) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        final user = snapshot.data;
+        final user =
+            _useGracePeriod ? FirebaseAuth.instance.currentUser : snapshot.data;
         if (user == null) {
           return const HalamanLogin();
         }
 
         return StreamBuilder<Map<String, dynamic>?>(
-          stream: firestore.streamUserProfile(user.uid, email: (user.email ?? '').toLowerCase()),
+          stream: firestore.streamUserProfile(user.uid, email: user.email),
           builder: (context, profileSnap) {
-            if (profileSnap.connectionState == ConnectionState.waiting) {
+            if (profileSnap.connectionState == ConnectionState.waiting &&
+                !_useGracePeriod) {
               return const Scaffold(
                 body: Center(child: CircularProgressIndicator()),
               );
@@ -372,6 +413,12 @@ class _AuthGate extends StatelessWidget {
 
             final profile = profileSnap.data;
             if (profile == null) {
+              if (_useGracePeriod) {
+                return _GracefulProfileGate(
+                  user: user,
+                  firestore: firestore,
+                );
+              }
               if (HalamanLogin.pendingMessage == null) {
                 HalamanLogin.showMessageOnNextLogin(
                   'Akun tidak terdaftar',
@@ -396,6 +443,79 @@ class _AuthGate extends StatelessWidget {
             return HalamanUtama(role: role);
           },
         );
+      },
+    );
+  }
+}
+
+class _GracefulProfileGate extends StatefulWidget {
+  final User user;
+  final FirestoreService firestore;
+
+  const _GracefulProfileGate({
+    required this.user,
+    required this.firestore,
+  });
+
+  @override
+  State<_GracefulProfileGate> createState() => _GracefulProfileGateState();
+}
+
+class _GracefulProfileGateState extends State<_GracefulProfileGate> {
+  static const _graceDuration = Duration(seconds: 5);
+  Timer? _timer;
+  bool _expired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(_graceDuration, () {
+      if (!mounted) return;
+      setState(() => _expired = true);
+      if (HalamanLogin.pendingMessage == null) {
+        HalamanLogin.showMessageOnNextLogin(
+          'Akun tidak terdaftar',
+        );
+      }
+      FirebaseAuth.instance.signOut();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: widget.firestore
+          .streamUserProfile(widget.user.uid, email: widget.user.email),
+      builder: (context, snap) {
+        if (_expired) {
+          return const HalamanLogin();
+        }
+        if (snap.connectionState == ConnectionState.waiting ||
+            snap.data == null) {
+          // Temporary access while waiting for profile fetch on Windows.
+          return const HalamanUtama(role: 'operator');
+        }
+
+        _timer?.cancel();
+        final profile = snap.data!;
+        final role = (profile['role'] ?? 'operator').toString().toLowerCase();
+        final disabled = profile['disabled'] == true;
+        if (disabled) {
+          if (HalamanLogin.pendingMessage == null) {
+            HalamanLogin.showMessageOnNextLogin(
+              'Akun anda Dinonaktifkan',
+            );
+          }
+          FirebaseAuth.instance.signOut();
+          return const HalamanLogin();
+        }
+        return HalamanUtama(role: role);
       },
     );
   }
