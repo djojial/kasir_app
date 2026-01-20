@@ -1,0 +1,25 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "kasir-skripsi-dj",
+          "appId": "1:516717229263:android:57686208d0fb838024f3ba",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "kasir-skripsi-dj",
+          "configurations": {
+            "android": "1:516717229263:android:57686208d0fb838024f3ba",
+            "ios": "1:516717229263:ios:5f4a37376cf5bd9b24f3ba",
+            "macos": "1:516717229263:ios:5f4a37376cf5bd9b24f3ba",
+            "web": "1:516717229263:web:8706d038c466b5ec24f3ba",
+            "windows": "1:516717229263:web:d849a7903ff63c4424f3ba"
+          }
+        }
+      }
+    }
+  }
+}

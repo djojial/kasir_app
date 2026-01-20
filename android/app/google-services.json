@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "516717229263",
+    "project_id": "kasir-skripsi-dj",
+    "storage_bucket": "kasir-skripsi-dj.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:516717229263:android:57686208d0fb838024f3ba",
+        "android_client_info": {
+          "package_name": "com.example.kasir_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBJuSPYaiIdB38ArSTma-tvcdWrp3d5w8I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
