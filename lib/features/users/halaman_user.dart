@@ -21,6 +21,7 @@ class _HalamanUserState extends State<HalamanUser> {
   final _firestore = FirestoreService();
   final _emailC = TextEditingController();
   final _passC = TextEditingController();
+  final _nicknameC = TextEditingController();
   String _role = 'operator';
   bool _loading = false;
   Future<FirebaseApp>? _secondaryAppFuture;
@@ -30,6 +31,7 @@ class _HalamanUserState extends State<HalamanUser> {
   void dispose() {
     _emailC.dispose();
     _passC.dispose();
+    _nicknameC.dispose();
     super.dispose();
   }
 
@@ -44,6 +46,15 @@ class _HalamanUserState extends State<HalamanUser> {
     if (_loading) return;
     final email = _emailC.text.trim();
     final password = _passC.text;
+    final nickname = _nicknameC.text.trim();
+    if (nickname.isEmpty) {
+      AppFeedback.show(
+        context,
+        message: 'Nama panggilan wajib diisi',
+        type: AppFeedbackType.info,
+      );
+      return;
+    }
     if (email.isEmpty || password.isEmpty) {
       AppFeedback.show(
         context,
@@ -66,11 +77,13 @@ class _HalamanUserState extends State<HalamanUser> {
         uid: cred.user!.uid,
         email: email,
         role: _role,
+        namaPanggilan: nickname,
       );
       await auth.signOut();
       if (!mounted) return;
       _emailC.clear();
       _passC.clear();
+      _nicknameC.clear();
       setState(() {
         _role = 'operator';
       });
@@ -445,6 +458,65 @@ class _HalamanUserState extends State<HalamanUser> {
     );
   }
 
+  Future<void> _changeNickname({
+    required String uid,
+    required String currentNickname,
+  }) async {
+    final controller = TextEditingController(text: currentNickname);
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Ubah Nama Panggilan'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Masukkan nama panggilan yang akan ditampilkan.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'Nama panggilan',
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Simpan'),
+            ),
+          ],
+        );
+      },
+    );
+    final nextNickname = controller.text.trim();
+    controller.dispose();
+    if (result != true) return;
+    if (nextNickname.isEmpty) {
+      AppFeedback.show(
+        context,
+        message: 'Nama panggilan wajib diisi',
+        type: AppFeedbackType.info,
+      );
+      return;
+    }
+
+    await _firestore.updateUserNickname(uid, nextNickname);
+    if (!mounted) return;
+    AppFeedback.show(
+      context,
+      message: 'Nama panggilan diperbarui',
+      type: AppFeedbackType.success,
+    );
+  }
+
   Future<void> _changeRole({
     required String uid,
     required String email,
@@ -722,32 +794,52 @@ class _HalamanUserState extends State<HalamanUser> {
             ),
             const SizedBox(height: 16),
             if (isWide)
-              Row(
+              Column(
                 children: [
-                  Expanded(
-                    child: FocusTextField(
-                      controller: _emailC,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined),
-                      ),
+                  FocusTextField(
+                    controller: _nicknameC,
+                    decoration: const InputDecoration(
+                      labelText: 'Nama panggilan',
+                      prefixIcon: Icon(Icons.person_outline),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FocusTextField(
-                      controller: _passC,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: Icon(Icons.lock_outline),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FocusTextField(
+                          controller: _emailC,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: Icon(Icons.email_outlined),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FocusTextField(
+                          controller: _passC,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: Icon(Icons.lock_outline),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               )
             else ...[
+              FocusTextField(
+                controller: _nicknameC,
+                decoration: const InputDecoration(
+                  labelText: 'Nama panggilan',
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+              ),
+              const SizedBox(height: 12),
               FocusTextField(
                 controller: _emailC,
                 keyboardType: TextInputType.emailAddress,
@@ -917,6 +1009,8 @@ class _HalamanUserState extends State<HalamanUser> {
                         final user = users[index];
                         final email = (user['email'] ?? '-').toString();
                         final emailKey = email.toLowerCase();
+                        final nickname =
+                            (user['nama_panggilan'] ?? '').toString();
                         final role =
                             (user['role'] ?? 'operator').toString();
                         final isVirtual = user['virtual'] == true;
@@ -994,6 +1088,12 @@ class _HalamanUserState extends State<HalamanUser> {
                                       currentEmail: email,
                                       users: users,
                                     );
+                                  } else if (value == 'nickname') {
+                                    if (effectiveId.isEmpty) return;
+                                    _changeNickname(
+                                      uid: effectiveId,
+                                      currentNickname: nickname,
+                                    );
                                   } else if (value == 'toggle') {
                                     if (effectiveId.isEmpty) return;
                                     _toggleUserDisabled(
@@ -1023,7 +1123,11 @@ class _HalamanUserState extends State<HalamanUser> {
                                   ),
                                   const PopupMenuItem(
                                     value: 'email',
-                                    child: Text('Ubah Username'),
+                                    child: Text('Ubah Email'),
+                                  ),
+                                  const PopupMenuItem(
+                                    value: 'nickname',
+                                    child: Text('Ubah Nama Panggilan'),
                                   ),
                                   PopupMenuItem(
                                     value: 'toggle',

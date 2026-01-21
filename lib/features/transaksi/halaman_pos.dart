@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:esc_pos_bluetooth/esc_pos_bluetooth.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart';
 import 'package:pdf/pdf.dart';
@@ -32,6 +34,8 @@ class _HalamanPOSState extends State<HalamanPOS> {
   String _kataKunciProduk = '';
   String _kategoriAktif = 'Semua';
   bool _cartSheetOpen = false;
+  Timer? _emptyReloadTimer;
+  bool _showEmptyReload = false;
 
   // =========================
   // TAMBAH KE KERANJANG
@@ -128,9 +132,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
         (s, e) => s + (_itemSubtotal(e) - _itemTotal(e)),
       );
 
-  int get pajakBayar => 0;
-
-  int get totalBayar => subtotalBayar - diskonBayar + pajakBayar;
+  int get totalBayar => subtotalBayar - diskonBayar;
 
   int _subtotalItems(List<TransaksiItem> items) =>
       items.fold(0, (sum, item) => sum + _itemSubtotal(item));
@@ -139,11 +141,28 @@ class _HalamanPOSState extends State<HalamanPOS> {
       items.fold(0, (sum, item) => sum + (_itemSubtotal(item) - _itemTotal(item)));
 
   int _totalItems(List<TransaksiItem> items) =>
-      _subtotalItems(items) - _diskonItems(items) + pajakBayar;
+      _subtotalItems(items) - _diskonItems(items);
 
   // =========================
   // PROSES BAYAR
   // =========================
+  Future<String> _resolveNamaKasir() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return 'Kasir';
+    try {
+      final profile = await firestore
+          .streamUserProfile(user.uid, email: user.email)
+          .first;
+      final nickname = (profile?['nama_panggilan'] ?? '').toString().trim();
+      if (nickname.isNotEmpty) return nickname;
+    } catch (_) {}
+    final name = user.displayName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final email = user.email ?? '';
+    if (email.isNotEmpty) return email.split('@').first;
+    return 'Kasir';
+  }
+
   Future<void> _commitPembayaran(_PaymentResult payment) async {
     if (keranjang.isEmpty) return;
 
@@ -466,25 +485,22 @@ class _HalamanPOSState extends State<HalamanPOS> {
     }
   }
 
-  void _showReceipt(Transaksi transaksi, _PaymentResult payment) {
+  Future<void> _showReceipt(Transaksi transaksi, _PaymentResult payment) async {
     final invoiceId = _formatInvoice(transaksi.id);
     final subtotal = _subtotalItems(transaksi.items);
     final diskonItems = _diskonItems(transaksi.items);
     final maxDialogHeight = MediaQuery.of(context).size.height * 0.9;
+    final namaKasir = await _resolveNamaKasir();
     showDialog(
       context: context,
       useRootNavigator: true,
       builder: (context) {
         const namaToko = 'ATk Wahyu Jaya';
-        const namaKasir = 'Kasir';
         final tanggal = DateTime.now();
         final tanggalStr =
             '${tanggal.day.toString().padLeft(2, '0')}/${tanggal.month.toString().padLeft(2, '0')}/${tanggal.year}';
         final jamStr =
             '${tanggal.hour.toString().padLeft(2, '0')}:${tanggal.minute.toString().padLeft(2, '0')}';
-        final qrUrl = 'https://kasirku.app/invoice/$invoiceId';
-        final qrKode =
-            invoiceId.substring(invoiceId.length - 6).replaceAll('-', '');
         return Dialog(
           backgroundColor: Colors.transparent,
           insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -591,19 +607,9 @@ class _HalamanPOSState extends State<HalamanPOS> {
                                 const SizedBox(height: 4),
                               ],
                               _SummaryRow(
-                                label: 'Pajak Barang',
-                                value: _formatRupiah(pajakBayar),
-                              ),
-                              const SizedBox(height: 4),
-                              _SummaryRow(
                                 label: 'Total',
                                 value: _formatRupiah(payment.total),
                                 emphasize: true,
-                              ),
-                              const SizedBox(height: 4),
-                              _SummaryRow(
-                                label: 'Kas',
-                                value: _formatRupiah(payment.paidAmount),
                               ),
                               const SizedBox(height: 4),
                               _SummaryRow(
@@ -612,39 +618,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 110,
-                              height: 110,
-                              decoration: BoxDecoration(
-                                border:
-                                    Border.all(color: const Color(0xFFE3E3E3)),
-                              ),
-                              child: const Center(
-                                child: Icon(Icons.qr_code_2, size: 68),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Butuh faktur?'),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    qrUrl,
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text('Kode: $qrKode'),
-                                ],
-                              ),
-                            ),
-                          ],
                         ),
                         const SizedBox(height: 8),
                       ],
@@ -750,7 +723,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
     bool cardStyle = false,
   }) async {
     const namaToko = 'ATk Wahyu Jaya';
-    const namaKasir = 'Kasir';
+    final namaKasir = await _resolveNamaKasir();
     const logoText = 'NIRA POS';
     final subtotal = _subtotalItems(transaksi.items);
     final diskonItems = _diskonItems(transaksi.items);
@@ -760,8 +733,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
         '${tanggal.day.toString().padLeft(2, '0')}/${tanggal.month.toString().padLeft(2, '0')}/${tanggal.year}';
     final jamStr =
         '${tanggal.hour.toString().padLeft(2, '0')}:${tanggal.minute.toString().padLeft(2, '0')}';
-    final qrUrl = 'https://kasirku.app/invoice/$invoiceId';
-    final qrKode = invoiceId.substring(invoiceId.length - 6).replaceAll('-', '');
     final doc = pw.Document();
     final accent = PdfColor.fromInt(0xFFF28C28);
     List<pw.Widget> buildContent(pw.Context context) {
@@ -781,18 +752,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
       final totalStyle = pw.TextStyle(
         fontWeight: pw.FontWeight.bold,
         fontSize: 12,
-      );
-      final qrBox = pw.Container(
-        padding: const pw.EdgeInsets.all(6),
-        decoration: pw.BoxDecoration(
-          border: pw.Border.all(color: PdfColors.grey300),
-        ),
-        child: pw.BarcodeWidget(
-          barcode: pw.Barcode.qrCode(),
-          data: qrUrl,
-          width: 86,
-          height: 86,
-        ),
       );
       final body = <pw.Widget>[
         pw.Row(
@@ -858,31 +817,8 @@ class _HalamanPOSState extends State<HalamanPOS> {
         if (diskonItems > 0) _pdfRow('Diskon Barang', diskonItems),
         if (payment.discount > 0)
           _pdfRow('Diskon Tambahan', payment.discount),
-        _pdfRow('Pajak Barang', pajakBayar),
         _pdfRow('Total', payment.total, bold: true, style: totalStyle),
-        _pdfRow('Kas', payment.paidAmount),
         _pdfRow('Kembalian', payment.change),
-        pw.SizedBox(height: 10),
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            qrBox,
-            pw.SizedBox(width: 10),
-            pw.Expanded(
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text('Butuh faktur?',
-                      style: pw.TextStyle(fontSize: 10)),
-                  pw.SizedBox(height: 4),
-                  pw.Text(qrUrl, style: muted),
-                  pw.SizedBox(height: 4),
-                  pw.Text('Kode: $qrKode', style: muted),
-                ],
-              ),
-            ),
-          ],
-        ),
       ];
       if (!cardStyle) {
         return body;
@@ -1141,14 +1077,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
                               ),
                             ]));
                             bytes.addAll(generator.row([
-                              PosColumn(text: 'Kas', width: 8),
-                              PosColumn(
-                                text: _formatRupiah(payment.paidAmount),
-                                width: 4,
-                                styles: const PosStyles(align: PosAlign.right),
-                              ),
-                            ]));
-                            bytes.addAll(generator.row([
                               PosColumn(text: 'Kembalian', width: 8),
                               PosColumn(
                                 text: _formatRupiah(payment.change),
@@ -1214,8 +1142,18 @@ class _HalamanPOSState extends State<HalamanPOS> {
     }
   }
 
+  void _scheduleEmptyReload() {
+    if (_showEmptyReload || _emptyReloadTimer != null) return;
+    _emptyReloadTimer = Timer(const Duration(seconds: 10), () {
+      if (!mounted) return;
+      _emptyReloadTimer = null;
+      setState(() => _showEmptyReload = true);
+    });
+  }
+
   @override
   void dispose() {
+    _emptyReloadTimer?.cancel();
     _cariProdukC.dispose();
     super.dispose();
   }
@@ -1272,22 +1210,32 @@ class _HalamanPOSState extends State<HalamanPOS> {
 
             final produk = snapshot.data!;
             if (produk.isEmpty) {
+              _scheduleEmptyReload();
               return Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Produk belum tersedia.'),
-                    const SizedBox(height: 8),
-                    HoverButton(
-                      child: OutlinedButton(
-                        onPressed: () => setState(() {}),
-                        child: const Text('Muat ulang'),
+                child: _showEmptyReload
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Produk belum tersedia.'),
+                          const SizedBox(height: 8),
+                          HoverButton(
+                            child: OutlinedButton(
+                              onPressed: () => setState(() {}),
+                              child: const Text('Muat ulang'),
+                            ),
+                          ),
+                        ],
+                      )
+                    : const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                    ),
-                  ],
-                ),
               );
             }
+            _emptyReloadTimer?.cancel();
+            _emptyReloadTimer = null;
+            _showEmptyReload = false;
             final kategoriSet = <String>{
               'Semua',
               ...produk
@@ -1404,7 +1352,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
                                     items: keranjang,
                                     subtotal: subtotalBayar,
                                     diskon: diskonBayar,
-                                    pajak: pajakBayar,
                                     totalBayar: totalBayar,
                                     onBayar: _openPaymentSheet,
                                     getHargaItem: _itemHarga,
@@ -1433,7 +1380,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
                                     items: keranjang,
                                     subtotal: subtotalBayar,
                                     diskon: diskonBayar,
-                                    pajak: pajakBayar,
                                     totalBayar: totalBayar,
                                     onBayar: _openPaymentSheet,
                                     getHargaItem: _itemHarga,
@@ -1484,7 +1430,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
                   items: keranjang,
                   subtotal: subtotalBayar,
                   diskon: diskonBayar,
-                  pajak: pajakBayar,
                   totalBayar: totalBayar,
                   onBayar: _openPaymentSheet,
                   getHargaItem: _itemHarga,
@@ -1940,7 +1885,6 @@ class _TransaksiTable extends StatelessWidget {
   final List<TransaksiItem> items;
   final int subtotal;
   final int diskon;
-  final int pajak;
   final int totalBayar;
   final VoidCallback onBayar;
   final int Function(TransaksiItem) getHargaItem;
@@ -1954,7 +1898,6 @@ class _TransaksiTable extends StatelessWidget {
     required this.items,
     required this.subtotal,
     required this.diskon,
-    required this.pajak,
     required this.totalBayar,
     required this.onBayar,
     required this.getHargaItem,
@@ -2178,10 +2121,6 @@ class _TransaksiTable extends StatelessWidget {
                 value: _formatRupiah(diskon),
               ),
               SizedBox(height: isShort ? 4 : 6),
-              _SummaryRow(
-                label: 'Pajak',
-                value: _formatRupiah(pajak),
-              ),
               SizedBox(height: isShort ? 6 : 10),
               const Divider(height: 1),
               SizedBox(height: isShort ? 6 : 10),

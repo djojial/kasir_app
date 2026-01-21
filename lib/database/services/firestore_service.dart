@@ -705,6 +705,7 @@ class FirestoreService {
     required String uid,
     required String email,
     required String role,
+    String? namaPanggilan,
     bool? disabled,
   }) async {
     final payload = <String, dynamic>{
@@ -712,6 +713,9 @@ class FirestoreService {
       'role': role.toLowerCase(),
       'updatedAt': Timestamp.now(),
     };
+    if (namaPanggilan != null && namaPanggilan.trim().isNotEmpty) {
+      payload['nama_panggilan'] = namaPanggilan.trim();
+    }
     if (disabled != null) {
       payload['disabled'] = disabled;
     }
@@ -728,6 +732,13 @@ class FirestoreService {
   Future<void> updateUserEmail(String uid, String email) async {
     await _usersRef.doc(uid).set({
       'email': email.toLowerCase(),
+      'updatedAt': Timestamp.now(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> updateUserNickname(String uid, String namaPanggilan) async {
+    await _usersRef.doc(uid).set({
+      'nama_panggilan': namaPanggilan.trim(),
       'updatedAt': Timestamp.now(),
     }, SetOptions(merge: true));
   }

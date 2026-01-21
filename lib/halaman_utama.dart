@@ -587,6 +587,7 @@ class _TopBar extends StatefulWidget {
 class _TopBarState extends State<_TopBar> {
   late DateTime _now;
   Timer? _timer;
+  final FirestoreService _firestore = FirestoreService();
 
   Stream<User?> _authStream() {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
@@ -743,12 +744,28 @@ class _TopBarState extends State<_TopBar> {
             stream: _authStream(),
             builder: (context, snapshot) {
               final user = snapshot.data;
-              final name = user?.displayName;
-              final email = user?.email ?? '';
-              final label = (name != null && name.trim().isNotEmpty)
-                  ? name.trim()
-                  : (email.isNotEmpty ? email.split('@').first : 'User');
-              return buildUserChip(label);
+              if (user == null) {
+                return buildUserChip('User');
+              }
+              return StreamBuilder<Map<String, dynamic>?>(
+                stream: _firestore.streamUserProfile(
+                  user.uid,
+                  email: user.email,
+                ),
+                builder: (context, profileSnap) {
+                  final profile = profileSnap.data;
+                  final nickname =
+                      (profile?['nama_panggilan'] ?? '').toString().trim();
+                  final name = user.displayName;
+                  final email = user.email ?? '';
+                  final label = nickname.isNotEmpty
+                      ? nickname
+                      : (name != null && name.trim().isNotEmpty)
+                          ? name.trim()
+                          : (email.isNotEmpty ? email.split('@').first : 'User');
+                  return buildUserChip(label);
+                },
+              );
             },
           );
 

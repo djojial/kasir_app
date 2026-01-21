@@ -37,6 +37,7 @@ class _HalamanLoginState extends State<HalamanLogin> {
   String? _error;
   String? _statusMessage;
   bool _statusSuccess = false;
+  bool _obscurePassword = true;
   bool _showPendingToast = false;
   bool _pendingToastSuccess = false;
   bool _pendingToastScheduled = false;
@@ -164,6 +165,44 @@ class _HalamanLoginState extends State<HalamanLogin> {
   }
 
   Future<void> _login() async {
+    final email = _emailC.text.trim();
+    final password = _passC.text;
+    if (email.isEmpty) {
+      AppFeedback.show(
+        context,
+        message: 'Mohon isi Email Anda.',
+        type: AppFeedbackType.error,
+      );
+      return;
+    }
+    if (password.isEmpty) {
+      AppFeedback.show(
+        context,
+        message: 'Mohon isi Password Anda.',
+        type: AppFeedbackType.error,
+      );
+      return;
+    }
+
+    final safeEmail = email.toLowerCase();
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: safeEmail)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) {
+        AppFeedback.show(
+          context,
+          message: 'Akun Tidak Terdaftar.',
+          type: AppFeedbackType.error,
+        );
+        return;
+      }
+    } on FirebaseException catch (_) {
+      // If lookup fails, fall back to auth to avoid blocking login.
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -172,8 +211,8 @@ class _HalamanLoginState extends State<HalamanLogin> {
 
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailC.text.trim(),
-        password: _passC.text,
+        email: email,
+        password: password,
       );
       if (mounted) {
         setState(() {
@@ -201,13 +240,20 @@ class _HalamanLoginState extends State<HalamanLogin> {
       setState(() {
         switch (e.code) {
           case 'user-not-found':
-            _error = 'Akun belum terdaftar.';
+            _error = 'Akun Tidak Terdaftar.';
             break;
           case 'wrong-password':
             _error = 'Password salah.';
             break;
+          case 'invalid-credential':
+          case 'invalid-login-credentials':
+            _error = 'Password salah.';
+            break;
           case 'invalid-email':
             _error = 'Format email tidak valid.';
+            break;
+          case 'too-many-requests':
+            _error = 'Permintaan dari perangkat ini diblokir sementara. Coba lagi nanti.';
             break;
           case 'user-disabled':
             _error = 'Akun dinonaktifkan.';
@@ -392,10 +438,24 @@ class _HalamanLoginState extends State<HalamanLogin> {
                         const SizedBox(height: 12),
                         FocusTextField(
                           controller: _passC,
-                          obscureText: true,
-                          decoration: const InputDecoration(
+                          obscureText: _obscurePassword,
+                          decoration: InputDecoration(
                             labelText: 'Password',
-                            prefixIcon: Icon(Icons.lock_outline),
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              onPressed: _loading
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _obscurePassword = !_obscurePassword;
+                                      });
+                                    },
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -425,52 +485,6 @@ class _HalamanLoginState extends State<HalamanLogin> {
                           ],
                         ),
                         const SizedBox(height: 14),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          child: _statusMessage == null
-                              ? const SizedBox.shrink()
-                              : Container(
-                                  key: ValueKey(_statusMessage),
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: _statusSuccess
-                                        ? const Color(0xFF16A34A)
-                                            .withValues(alpha: 0.12)
-                                        : const Color(0xFFEF4444)
-                                            .withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: _statusSuccess
-                                          ? const Color(0xFF16A34A)
-                                          : const Color(0xFFEF4444),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        _statusSuccess
-                                            ? Icons.check_circle_rounded
-                                            : Icons.error_rounded,
-                                        color: _statusSuccess
-                                            ? const Color(0xFF16A34A)
-                                            : const Color(0xFFEF4444),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _statusMessage!,
-                                          style: TextStyle(
-                                            color: _statusSuccess
-                                                ? const Color(0xFF16A34A)
-                                                : const Color(0xFFEF4444),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                        ),
                         const SizedBox(height: 18),
                         HoverButton(
                           enabled: !_loading,
