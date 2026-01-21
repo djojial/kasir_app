@@ -30,8 +30,8 @@ class HalamanLogin extends StatefulWidget {
 class _HalamanLoginState extends State<HalamanLogin> {
   static const _prefRemember = 'login_remember';
   static const _prefEmail = 'login_email';
-  final _emailC = TextEditingController(text: 'muhammaddjojial@gmail.com');
-  final _passC = TextEditingController(text: 'hebatkali'); //wahyujaya 
+  final _emailC = TextEditingController();
+  final _passC = TextEditingController();
   bool _loading = false;
   bool _rememberMe = false;
   String? _error;
