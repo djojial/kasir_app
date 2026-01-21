@@ -184,6 +184,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       final headers = [
         'No',
         'Tanggal',
+        'Invoice',
         'Produk',
         'Perubahan',
         'Stok Akhir',
@@ -220,6 +221,10 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         final stokAkhir = (log['stok_akhir'] ?? 0) as int;
         final sumber = (log['sumber'] ?? '').toString().toLowerCase();
         final tipe = (log['tipe'] ?? '').toString().toLowerCase();
+        final invoiceRaw = log['refId'] ?? log['transaksiId'];
+        final invoice = sumber == 'pos' && invoiceRaw != null
+            ? invoiceRaw.toString()
+            : '-';
         final isHarga = tipe == 'harga';
         final labelPerubahan =
             isHarga ? '-' : (perubahan >= 0 ? '+$perubahan' : '$perubahan');
@@ -245,6 +250,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         rows.add([
           '${i + 1}',
           _formatTanggalJam(dt),
+          invoice,
           nama,
           labelPerubahan,
           stokAkhir.toString(),
@@ -259,6 +265,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       }
 
       rows.add([
+        '',
         '',
         '',
         'TOTAL',
@@ -361,7 +368,6 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
               cellAlignment: pw.Alignment.centerLeft,
               cellAlignments: {
                 0: pw.Alignment.center,
-                3: pw.Alignment.center,
                 4: pw.Alignment.center,
                 5: pw.Alignment.center,
                 6: pw.Alignment.center,
@@ -370,6 +376,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
                 9: pw.Alignment.center,
                 10: pw.Alignment.center,
                 11: pw.Alignment.center,
+                12: pw.Alignment.center,
               },
             ),
           ],
@@ -1172,6 +1179,7 @@ class _LogTableState extends State<_LogTable> {
     const widths = [
       60.0,
       170.0,
+      160.0,
       200.0,
       140.0,
       140.0,
@@ -1192,7 +1200,7 @@ class _LogTableState extends State<_LogTable> {
         final adjustedWidths = List<double>.from(widths);
         final extra = tableWidth - tableBaseWidth;
         if (extra > 0) {
-          adjustedWidths[2] += extra;
+          adjustedWidths[3] += extra;
         }
         final scheme = Theme.of(context).colorScheme;
         final dragDevices = {
@@ -1223,6 +1231,8 @@ class _LogTableState extends State<_LogTable> {
                       cells: const [
                         Text('No', style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Tanggal',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('Invoice',
                             style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Produk',
                             style: TextStyle(fontWeight: FontWeight.w700)),
@@ -1270,6 +1280,10 @@ class _LogTableState extends State<_LogTable> {
                       final stokAkhir = (log['stok_akhir'] ?? 0) as int;
                       final sumber = (log['sumber'] ?? '').toString().toLowerCase();
                       final tipe = (log['tipe'] ?? '').toString().toLowerCase();
+                      final invoiceRaw = log['refId'] ?? log['transaksiId'];
+                      final invoice = sumber == 'pos' && invoiceRaw != null
+                          ? invoiceRaw.toString()
+                          : '-';
                       final isHarga = tipe == 'harga';
                       final labelPerubahan = isHarga
                           ? '-'
@@ -1305,6 +1319,7 @@ class _LogTableState extends State<_LogTable> {
                           cells: [
                             Text(no.toString(), textAlign: TextAlign.center),
                             Text(_formatTanggalJam(dt)),
+                            Text(invoice),
                             Text(nama),
                             Text(kategori),
                             Text(barcode),
@@ -1355,6 +1370,7 @@ class _LogTableState extends State<_LogTable> {
                           'TOTAL',
                           style: TextStyle(fontWeight: FontWeight.w700),
                         ),
+                        const Text(''),
                         const Text(''),
                         const Text(''),
                         const Text(''),

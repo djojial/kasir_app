@@ -13,9 +13,16 @@ import '../../database/models/produk_model.dart';
 import '../../database/services/firestore_service.dart';
 
 class HalamanStok extends StatefulWidget {
-  final bool canManage;
+  final bool canAdd;
+  final bool canEdit;
+  final bool canDelete;
 
-  const HalamanStok({super.key, this.canManage = true});
+  const HalamanStok({
+    super.key,
+    this.canAdd = true,
+    this.canEdit = true,
+    this.canDelete = true,
+  });
 
   @override
   State<HalamanStok> createState() => _HalamanStokState();
@@ -25,6 +32,7 @@ class _HalamanStokState extends State<HalamanStok> {
   final FirestoreService firestore = FirestoreService();
   final TextEditingController _cariC = TextEditingController();
   String _kataKunci = '';
+  bool get _showActions => widget.canEdit || widget.canDelete;
 
   Future<void> _formProduk(Produk? produk) async {
     String formatAngka(int value) {
@@ -715,7 +723,7 @@ class _HalamanStokState extends State<HalamanStok> {
                                     ),
                             ),
                           ),
-                          if (widget.canManage) ...[
+                          if (widget.canAdd) ...[
                             const SizedBox(height: 12),
                             SizedBox(
                               width: double.infinity,
@@ -799,7 +807,7 @@ class _HalamanStokState extends State<HalamanStok> {
                             ),
                           ),
                           const SizedBox(width: 20),
-                          if (widget.canManage)
+                          if (widget.canAdd)
                             HoverButton(
                               child: ElevatedButton.icon(
                                 onPressed: () => _formProduk(null),
@@ -833,9 +841,9 @@ class _HalamanStokState extends State<HalamanStok> {
                 child: _TabelStok(
                   firestore: firestore,
                   kataKunci: _kataKunci,
-                  onEdit: widget.canManage ? _formProduk : null,
-                  onHapus: widget.canManage ? _hapusProduk : null,
-                  canManage: widget.canManage,
+                  onEdit: widget.canEdit ? _formProduk : null,
+                  onHapus: widget.canDelete ? _hapusProduk : null,
+                  showActions: _showActions,
                 ),
               ),
             ],
@@ -851,14 +859,14 @@ class _TabelStok extends StatelessWidget {
   final String kataKunci;
   final void Function(Produk)? onEdit;
   final void Function(String)? onHapus;
-  final bool canManage;
+  final bool showActions;
 
   const _TabelStok({
     required this.firestore,
     required this.kataKunci,
     required this.onEdit,
     required this.onHapus,
-    required this.canManage,
+    required this.showActions,
   });
 
   @override
@@ -897,7 +905,7 @@ class _TabelStok extends StatelessWidget {
           return LayoutBuilder(
             builder: (context, constraints) {
               final divider = Theme.of(context).dividerColor;
-              final minTableWidth = canManage ? 1280.0 : 1120.0;
+              final minTableWidth = showActions ? 1280.0 : 1120.0;
               final tableWidth = math.max(constraints.maxWidth, minTableWidth);
               final dragDevices = {
                 PointerDeviceKind.touch,
@@ -949,7 +957,7 @@ class _TabelStok extends StatelessWidget {
                             const DataColumn(label: Text('Laba %')),
                             const DataColumn(label: Text('Stok')),
                             const DataColumn(label: Text('Status')),
-                            if (canManage)
+                            if (showActions)
                               const DataColumn(label: Text('Aksi')),
                           ],
                           rows: filtered.map((p) {
@@ -1037,33 +1045,31 @@ class _TabelStok extends StatelessWidget {
                                 ),
                               ),
                             ];
-                            if (canManage) {
+                            if (showActions) {
                               cells.add(
                                 DataCell(
                                   Row(
                                     children: [
-                                      IconButton(
-                                        tooltip: 'Edit',
-                                        icon: Icon(
-                                          Icons.edit_outlined,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
+                                      if (onEdit != null)
+                                        IconButton(
+                                          tooltip: 'Edit',
+                                          icon: Icon(
+                                            Icons.edit_outlined,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                          ),
+                                          iconSize: 22,
+                                          onPressed: () => onEdit!(p),
                                         ),
-                                        iconSize: 22,
-                                        onPressed: onEdit == null
-                                            ? null
-                                            : () => onEdit!(p),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Hapus',
-                                        icon: const Icon(Icons.delete_outline,
-                                            color: Color(0xFFB42318)),
-                                        iconSize: 22,
-                                        onPressed: onHapus == null
-                                            ? null
-                                            : () => onHapus!(p.id!),
-                                      ),
+                                      if (onHapus != null)
+                                        IconButton(
+                                          tooltip: 'Hapus',
+                                          icon: const Icon(Icons.delete_outline,
+                                              color: Color(0xFFB42318)),
+                                          iconSize: 22,
+                                          onPressed: () => onHapus!(p.id!),
+                                        ),
                                     ],
                                   ),
                                 ),

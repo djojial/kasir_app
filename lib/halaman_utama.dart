@@ -98,9 +98,30 @@ class _HalamanUtamaState extends State<HalamanUtama> {
 
   bool get _isOwner => widget.role == 'owner';
   bool get _isAdmin => widget.role == 'admin';
+  bool get _isOperator => widget.role == 'operator';
 
   List<_NavItem> get _navItems {
     if (_isOwner) {
+      return const [
+        _NavItem(
+          page: _PageKey.dashboard,
+          icon: Icons.space_dashboard_outlined,
+          label: 'Dashboard',
+        ),
+        _NavItem(
+          page: _PageKey.stok,
+          icon: Icons.inventory_2_outlined,
+          label: 'Stok',
+        ),
+        _NavItem(
+          page: _PageKey.laporan,
+          icon: Icons.description_outlined,
+          label: 'Laporan',
+        ),
+      ];
+    }
+
+    if (_isAdmin) {
       return const [
         _NavItem(
           page: _PageKey.dashboard,
@@ -130,22 +151,18 @@ class _HalamanUtamaState extends State<HalamanUtama> {
       ];
     }
 
-    if (_isAdmin) {
-      return const [
-        _NavItem(
-          page: _PageKey.stok,
-          icon: Icons.inventory_2_outlined,
-          label: 'Stok',
-        ),
-      ];
-    }
-
-    return const [
-      _NavItem(
+    return [
+      const _NavItem(
         page: _PageKey.pos,
         icon: Icons.point_of_sale,
         label: 'Transaksi',
       ),
+      if (_isOperator)
+        const _NavItem(
+          page: _PageKey.stok,
+          icon: Icons.inventory_2_outlined,
+          label: 'Stok',
+        ),
     ];
   }
 
@@ -180,7 +197,11 @@ class _HalamanUtamaState extends State<HalamanUtama> {
       case _PageKey.dashboard:
         return _dashboard();
       case _PageKey.stok:
-        return HalamanStok(canManage: _isOwner || _isAdmin);
+        return HalamanStok(
+          canAdd: _isAdmin || _isOperator,
+          canEdit: _isAdmin,
+          canDelete: _isAdmin || _isOperator,
+        );
       case _PageKey.laporan:
         return const HalamanLaporan();
       case _PageKey.users:

@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/ui/app_feedback.dart';
 import '../../core/ui/interactive_widgets.dart';
@@ -26,9 +28,12 @@ class HalamanLogin extends StatefulWidget {
 }
 
 class _HalamanLoginState extends State<HalamanLogin> {
+  static const _prefRemember = 'login_remember';
+  static const _prefEmail = 'login_email';
   final _emailC = TextEditingController(text: 'muhammaddjojial@gmail.com');
   final _passC = TextEditingController(text: 'hebatkali'); //wahyujaya 
   bool _loading = false;
+  bool _rememberMe = false;
   String? _error;
   String? _statusMessage;
   bool _statusSuccess = false;
@@ -42,6 +47,100 @@ class _HalamanLoginState extends State<HalamanLogin> {
   void initState() {
     super.initState();
     _consumePendingMessage();
+    _loadRememberedUser();
+  }
+
+  Future<void> _loadRememberedUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remember = prefs.getBool(_prefRemember) ?? false;
+    final email = prefs.getString(_prefEmail) ?? '';
+    if (!mounted) return;
+    setState(() {
+      _rememberMe = remember;
+      if (remember && email.isNotEmpty) {
+        _emailC.text = email;
+      }
+    });
+  }
+
+  Future<void> _setRememberMe(bool value) async {
+    setState(() => _rememberMe = value);
+    final prefs = await SharedPreferences.getInstance();
+    if (value) {
+      await prefs.setBool(_prefRemember, true);
+      await prefs.setString(_prefEmail, _emailC.text.trim());
+    } else {
+      await prefs.remove(_prefRemember);
+      await prefs.remove(_prefEmail);
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    final rootContext = context;
+    if (!mounted) return;
+    final safeEmail = _emailC.text.trim().toLowerCase();
+    if (safeEmail.isEmpty) {
+      AppFeedback.show(
+        rootContext,
+        message: 'Email belum diisi.',
+        type: AppFeedbackType.error,
+      );
+      return;
+    }
+    try {
+      AppFeedback.showLoading(rootContext, message: 'Memeriksa akun...');
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: safeEmail)
+          .limit(1)
+          .get();
+      final data = snap.docs.isEmpty ? null : snap.docs.first.data();
+      final role =
+          (data?['role'] ?? '').toString().trim().toLowerCase();
+      AppFeedback.hideLoading();
+
+      if (role != 'admin') {
+        if (role.isEmpty) {
+          AppFeedback.show(
+            rootContext,
+            message: 'Email belum terdaftar.',
+            type: AppFeedbackType.error,
+          );
+        } else {
+          AppFeedback.show(
+            rootContext,
+            message: 'Hubungi Admin.',
+            type: AppFeedbackType.info,
+          );
+        }
+        return;
+      }
+
+      AppFeedback.showLoading(rootContext, message: 'Mengirim reset password...');
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: safeEmail);
+      if (!mounted) return;
+      AppFeedback.show(
+        rootContext,
+        message: 'Link reset password sudah dikirim.',
+        type: AppFeedbackType.success,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      AppFeedback.show(
+        rootContext,
+        message: e.message ?? 'Gagal mengirim reset password.',
+        type: AppFeedbackType.error,
+      );
+    } on FirebaseException catch (_) {
+      if (!mounted) return;
+      AppFeedback.show(
+        rootContext,
+        message: 'Gagal memeriksa akun.',
+        type: AppFeedbackType.error,
+      );
+    } finally {
+      AppFeedback.hideLoading();
+    }
   }
 
   void _consumePendingMessage() {
@@ -81,6 +180,15 @@ class _HalamanLoginState extends State<HalamanLogin> {
           _statusSuccess = true;
           _statusMessage = 'Login berhasil';
         });
+        if (_rememberMe) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(_prefRemember, true);
+          await prefs.setString(_prefEmail, _emailC.text.trim());
+        } else {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove(_prefRemember);
+          await prefs.remove(_prefEmail);
+        }
         if (!_successToastScheduled) {
           _successToastScheduled = true;
           AppFeedback.queue(
@@ -289,6 +397,32 @@ class _HalamanLoginState extends State<HalamanLogin> {
                             labelText: 'Password',
                             prefixIcon: Icon(Icons.lock_outline),
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _rememberMe,
+                              onChanged: _loading
+                                  ? null
+                                  : (value) => _setRememberMe(value ?? false),
+                            ),
+                            Expanded(
+                              child: InkWell(
+                                onTap: _loading
+                                    ? null
+                                    : () => _setRememberMe(!_rememberMe),
+                                child: const Text(
+                                  'Ingat saya',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _loading ? null : _forgotPassword,
+                              child: const Text('Lupa password?'),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 14),
                         AnimatedSwitcher(
