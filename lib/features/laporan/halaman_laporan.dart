@@ -160,7 +160,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       final logs = await _firestore.streamStokLog().first;
       final filtered = logs.where(_logSesuaiFilter).toList();
 
-      const namaToko = 'ATk Wahyu Jaya';
+      const namaToko = 'ATK Wahyu Jaya';
       const alamatToko = 'Jln Lamno, Jaya, Aceh Jaya';
       const nomorHp = '082210203488';
       final emailToko = FirebaseAuth.instance.currentUser?.email ?? '-';
