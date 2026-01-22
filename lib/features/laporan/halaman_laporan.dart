@@ -9,6 +9,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/ui/interactive_widgets.dart';
 import '../../database/models/produk_model.dart';
@@ -397,13 +398,29 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       await savePdfBytesWeb(bytes, filename);
       return;
     }
+    final isMobile = defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
     final savedPath = await savePdfToDownloads(bytes, filename);
     if (!mounted) return;
     if (savedPath == null) {
+      if (isMobile) {
+        final xfile = XFile.fromData(
+          bytes,
+          name: filename,
+          mimeType: 'application/pdf',
+        );
+        await Share.shareXFiles([xfile], text: 'Simpan PDF laporan');
+        if (!mounted) return;
+        _snack('Pilih Bagikan untuk menyimpan PDF', Colors.orange);
+        return;
+      }
       _snack('Gagal menyimpan otomatis', Colors.red);
       return;
     }
-    _snack('PDF tersimpan di Downloads', Colors.green);
+    _snack(
+      isMobile ? 'PDF tersimpan di penyimpanan aplikasi' : 'PDF tersimpan di Downloads',
+      Colors.green,
+    );
   }
 
   bool _logDalamRentang(Map<String, dynamic> log) {

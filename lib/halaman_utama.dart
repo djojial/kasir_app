@@ -366,70 +366,90 @@ class _HalamanUtamaState extends State<HalamanUtama> {
         final isWide = constraints.maxWidth >= 1100;
         const gap = 16.0;
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              _SummaryRow(firestore: firestore),
-              const SizedBox(height: gap),
-              if (isWide)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 3, child: _RekapStokCard()),
-                    const SizedBox(width: gap),
-                    Expanded(
-                      flex: 2,
-                      child: _TransaksiTerbaruCard(
-                        firestore: firestore,
-                        onOpenLaporan: () => _openPage(_PageKey.laporan),
-                      ),
+        return StreamBuilder<DateTime?>(
+          stream: firestore.streamDashboardResetAt(),
+          builder: (context, snapshot) {
+            final resetAt = snapshot.data;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  _SummaryRow(
+                    firestore: firestore,
+                    resetAt: resetAt,
+                  ),
+                  const SizedBox(height: gap),
+                  if (isWide)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _RekapStokCard(resetAt: resetAt),
+                        ),
+                        const SizedBox(width: gap),
+                        Expanded(
+                          flex: 2,
+                          child: _TransaksiTerbaruCard(
+                            firestore: firestore,
+                            onOpenLaporan: () => _openPage(_PageKey.laporan),
+                            resetAt: resetAt,
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Column(
+                      children: [
+                        _RekapStokCard(resetAt: resetAt),
+                        const SizedBox(height: gap),
+                        _TransaksiTerbaruCard(
+                          firestore: firestore,
+                          onOpenLaporan: () => _openPage(_PageKey.laporan),
+                          resetAt: resetAt,
+                        ),
+                      ],
                     ),
-                  ],
-                )
-              else
-                Column(
-                  children: [
-                    _RekapStokCard(),
-                    const SizedBox(height: gap),
-                    _TransaksiTerbaruCard(
-                      firestore: firestore,
-                      onOpenLaporan: () => _openPage(_PageKey.laporan),
+                  const SizedBox(height: gap),
+                  if (isWide)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _LowStockCard(
+                            firestore: firestore,
+                            onOpenStok: () => _openPage(_PageKey.stok),
+                          ),
+                        ),
+                        const SizedBox(width: gap),
+                        Expanded(
+                          flex: 2,
+                          child: _PenjualanChartCard(
+                            firestore: firestore,
+                            resetAt: resetAt,
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Column(
+                      children: [
+                        _LowStockCard(
+                          firestore: firestore,
+                          onOpenStok: () => _openPage(_PageKey.stok),
+                        ),
+                        const SizedBox(height: gap),
+                        _PenjualanChartCard(
+                          firestore: firestore,
+                          resetAt: resetAt,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              const SizedBox(height: gap),
-              if (isWide)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: _LowStockCard(
-                        firestore: firestore,
-                        onOpenStok: () => _openPage(_PageKey.stok),
-                      ),
-                    ),
-                    const SizedBox(width: gap),
-                    Expanded(
-                      flex: 2,
-                      child: _PenjualanChartCard(firestore: firestore),
-                    ),
-                  ],
-                )
-              else
-                Column(
-                  children: [
-                    _LowStockCard(
-                      firestore: firestore,
-                      onOpenStok: () => _openPage(_PageKey.stok),
-                    ),
-                    const SizedBox(height: gap),
-                    _PenjualanChartCard(firestore: firestore),
-                  ],
-                ),
-            ],
-          ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -868,74 +888,430 @@ class _TopBarState extends State<_TopBar> {
   }
 }
 
-class _SummaryRow extends StatelessWidget {
-  final FirestoreService firestore;
+enum _SummaryRange { bulanan, tahunan }
 
-  const _SummaryRow({required this.firestore});
+class _SummaryRow extends StatefulWidget {
+  final FirestoreService firestore;
+  final DateTime? resetAt;
+
+  const _SummaryRow({
+    required this.firestore,
+    this.resetAt,
+  });
+
+  @override
+  State<_SummaryRow> createState() => _SummaryRowState();
+}
+
+class _SummaryRowState extends State<_SummaryRow> {
+  _SummaryRange _range = _SummaryRange.bulanan;
+  late int _tahun;
+  late int _bulan;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _tahun = now.year;
+    _bulan = now.month;
+  }
+
+  DateTimeRange _currentRange() {
+    if (_range == _SummaryRange.tahunan) {
+      final start = DateTime(_tahun, 1, 1);
+      final end = DateTime(_tahun + 1, 1, 1);
+      return DateTimeRange(start: start, end: end);
+    }
+    final start = DateTime(_tahun, _bulan, 1);
+    final end = DateTime(_tahun, _bulan + 1, 1);
+    return DateTimeRange(start: start, end: end);
+  }
+
+  String _formatResetDate(DateTime date) {
+    const bulan = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'Mei',
+      'Jun',
+      'Jul',
+      'Agu',
+      'Sep',
+      'Okt',
+      'Nov',
+      'Des',
+    ];
+    final day = date.day.toString().padLeft(2, '0');
+    final month = bulan[date.month - 1];
+    return '$day $month ${date.year}';
+  }
+
+  Future<void> _confirmReset() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Reset dashboard?'),
+          content: const Text(
+            'Anda yakin ingin merestart? '
+            'Dashboard akan menghitung ulang mulai hari ini. '
+            'Data laporan lama tetap tersedia.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _dashAccent,
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Reset'),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok != true) return;
+    await widget.firestore.setDashboardResetNow();
+    if (!mounted) return;
+    AppFeedback.show(
+      context,
+      message: 'Dashboard direset mulai hari ini',
+      type: AppFeedbackType.success,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 900;
-        final children = [
-          StreamBuilder<int>(
-            stream: firestore.streamJumlahTransaksi(),
-            builder: (_, snap) {
-              return _SummaryCard(
+        const bulanLabels = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'Mei',
+          'Jun',
+          'Jul',
+          'Agu',
+          'Sep',
+          'Okt',
+          'Nov',
+          'Des',
+        ];
+        return StreamBuilder<List<Transaksi>>(
+          stream: widget.firestore.streamSemuaTransaksi(),
+          builder: (_, snap) {
+            final list = snap.data ?? const <Transaksi>[];
+            final filteredForYear = widget.resetAt == null
+                ? list
+                : list
+                    .where((t) => !t.tanggal.isBefore(widget.resetAt!))
+                    .toList();
+            final years = filteredForYear
+                .map((t) => t.tanggal.year)
+                .toSet()
+                .toList()
+              ..sort((a, b) => b.compareTo(a));
+            final yearOptions = years.isNotEmpty
+                ? years
+                : <int>[DateTime.now().year];
+            if (!yearOptions.contains(_tahun)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() => _tahun = yearOptions.first);
+                }
+              });
+            }
+            final range = _currentRange();
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final pillBg =
+                isDark ? const Color(0xFF1F1F1F) : const Color(0xFFF5F1EA);
+            final filterBar = Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: pillBg,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: _dashBorder(context)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 10,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _PeriodPill(
+                        label: 'Bulanan',
+                        active: _range == _SummaryRange.bulanan,
+                        onTap: () => setState(
+                          () => _range = _SummaryRange.bulanan,
+                        ),
+                      ),
+                      _PeriodPill(
+                        label: 'Tahunan',
+                        active: _range == _SummaryRange.tahunan,
+                        onTap: () => setState(
+                          () => _range = _SummaryRange.tahunan,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_range == _SummaryRange.bulanan)
+                  _SelectChip(
+                    icon: Icons.calendar_month_outlined,
+                    label: bulanLabels[_bulan - 1],
+                    child: PopupMenuButton<int>(
+                      tooltip: 'Pilih bulan',
+                      onSelected: (value) => setState(() => _bulan = value),
+                      constraints: const BoxConstraints(minWidth: 140),
+                      itemBuilder: (context) => [
+                        for (var i = 0; i < bulanLabels.length; i++)
+                          PopupMenuItem(
+                            value: i + 1,
+                            child: SizedBox(
+                              width: 120,
+                              child: Text(
+                                bulanLabels[i],
+                                textAlign: TextAlign.center,
+                                softWrap: false,
+                              ),
+                            ),
+                          ),
+                      ],
+                      icon: const Icon(Icons.expand_more),
+                    ),
+                  ),
+                _SelectChip(
+                  icon: Icons.event_outlined,
+                  label: '$_tahun',
+                  child: PopupMenuButton<int>(
+                    tooltip: 'Pilih tahun',
+                    onSelected: (value) => setState(() => _tahun = value),
+                    constraints: const BoxConstraints(minWidth: 140),
+                    itemBuilder: (context) => [
+                      for (final y in yearOptions)
+                        PopupMenuItem(
+                          value: y,
+                          child: SizedBox(
+                            width: 120,
+                            child: Text(
+                              '$y',
+                              textAlign: TextAlign.center,
+                              softWrap: false,
+                            ),
+                          ),
+                        ),
+                    ],
+                    icon: const Icon(Icons.expand_more),
+                  ),
+                ),
+                if (widget.resetAt != null)
+                  Text(
+                    'Reset: ${_formatResetDate(widget.resetAt!)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _dashMuted(context),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            );
+            final restartButton = OutlinedButton.icon(
+              onPressed: _confirmReset,
+              icon: const Icon(Icons.restart_alt),
+              label: const Text('Restart'),
+            );
+            final filtered = list.where((t) {
+              final dt = t.tanggal;
+              final start = widget.resetAt != null &&
+                      widget.resetAt!.isAfter(range.start)
+                  ? widget.resetAt!
+                  : range.start;
+              return !dt.isBefore(start) && dt.isBefore(range.end);
+            }).toList();
+            final totalTransaksi = filtered.length;
+            var totalPenjualan = 0;
+            var totalLaba = 0;
+            for (final t in filtered) {
+              totalLaba += t.total;
+              for (final item in t.items) {
+                final qtyRaw = item['qty'];
+                if (qtyRaw is int) {
+                  totalPenjualan += qtyRaw;
+                } else if (qtyRaw is num) {
+                  totalPenjualan += qtyRaw.round();
+                }
+              }
+            }
+
+            final cards = [
+              _SummaryCard(
                 icon: Icons.payments,
                 label: 'Total Transaksi',
-                value: (snap.data ?? 0).toString(),
+                value: totalTransaksi.toString(),
                 accent: const Color(0xFFF28C28),
-              );
-            },
-          ),
-          StreamBuilder<int>(
-            stream: firestore.streamItemTerjual(),
-            builder: (_, snap) {
-              return _SummaryCard(
+              ),
+              _SummaryCard(
                 icon: Icons.trending_up,
                 label: 'Total Penjualan',
-                value: (snap.data ?? 0).toString(),
+                value: totalPenjualan.toString(),
                 accent: const Color(0xFFC76A1F),
-              );
-            },
-          ),
-          StreamBuilder<int>(
-            stream: firestore.streamPendapatan(),
-            builder: (_, snap) {
-              return _SummaryCard(
+              ),
+              _SummaryCard(
                 icon: Icons.account_balance_wallet_outlined,
                 label: 'Total Laba',
-                value: '+ Rp ${snap.data ?? 0}',
+                value: '+ Rp $totalLaba',
                 accent: const Color(0xFFE7A354),
+              ),
+            ];
+
+            if (isWide) {
+              return Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: filterBar),
+                      restartButton,
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: cards[0]),
+                      const SizedBox(width: 16),
+                      Expanded(child: cards[1]),
+                      const SizedBox(width: 16),
+                      Expanded(child: cards[2]),
+                    ],
+                  ),
+                ],
               );
-            },
-          ),
-        ];
+            }
 
-        if (isWide) {
-          return Row(
-            children: [
-              Expanded(child: children[0]),
-              const SizedBox(width: 16),
-              Expanded(child: children[1]),
-              const SizedBox(width: 16),
-              Expanded(child: children[2]),
-            ],
-          );
-        }
-
-        return Column(
-          children: [
-            children[0],
-            const SizedBox(height: 16),
-            children[1],
-            const SizedBox(height: 16),
-            children[2],
-          ],
+            return Column(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: filterBar),
+                    restartButton,
+                  ],
+                ),
+                const SizedBox(height: 16),
+                cards[0],
+                const SizedBox(height: 16),
+                cards[1],
+                const SizedBox(height: 16),
+                cards[2],
+              ],
+            );
+          },
         );
       },
+    );
+  }
+}
+
+class _PeriodPill extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _PeriodPill({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = active ? Colors.black : _dashText(context);
+    final bgColor = active ? _dashAccent : Colors.transparent;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 180),
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: textColor,
+          ),
+          child: Text(label),
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Widget child;
+
+  const _SelectChip({
+    required this.icon,
+    required this.label,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: _dashSurfaceAlt(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _dashBorder(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: _dashMuted(context)),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _dashText(context),
+            ),
+          ),
+          const SizedBox(width: 6),
+          child,
+        ],
+      ),
     );
   }
 }
@@ -1011,7 +1387,9 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _RekapStokCard extends StatefulWidget {
-  const _RekapStokCard();
+  final DateTime? resetAt;
+
+  const _RekapStokCard({this.resetAt});
 
   @override
   State<_RekapStokCard> createState() => _RekapStokCardState();
@@ -1199,7 +1577,12 @@ class _RekapStokCardState extends State<_RekapStokCard> {
                     );
                   }
                   final data = snapshot.data ?? const <Transaksi>[];
-                  final points = _buildChartData(data, _range, now);
+                  final filtered = widget.resetAt == null
+                      ? data
+                      : data
+                          .where((t) => !t.tanggal.isBefore(widget.resetAt!))
+                          .toList();
+                  final points = _buildChartData(filtered, _range, now);
                   return _StockChart(data: points);
                 },
               ),
@@ -1402,10 +1785,12 @@ class _LegendDot extends StatelessWidget {
 class _TransaksiTerbaruCard extends StatelessWidget {
   final FirestoreService firestore;
   final VoidCallback onOpenLaporan;
+  final DateTime? resetAt;
 
   const _TransaksiTerbaruCard({
     required this.firestore,
     required this.onOpenLaporan,
+    this.resetAt,
   });
 
   @override
@@ -1437,8 +1822,11 @@ class _TransaksiTerbaruCard extends StatelessWidget {
                 }
 
                 final data = snapshot.data!;
+                final filtered = resetAt == null
+                    ? data
+                    : data.where((t) => !t.tanggal.isBefore(resetAt!)).toList();
 
-                if (data.isEmpty) {
+                if (filtered.isEmpty) {
                   return const Padding(
                     padding: EdgeInsets.all(24),
                     child: Center(child: Text('Belum ada transaksi')),
@@ -1446,7 +1834,7 @@ class _TransaksiTerbaruCard extends StatelessWidget {
                 }
 
                 return Column(
-                  children: data.take(3).map((t) {
+                  children: filtered.take(3).map((t) {
                     return _TransaksiItemTile(
                       nama: t.id,
                       deskripsi: '${t.jenis} - ${t.items.length} item',
@@ -1625,8 +2013,12 @@ class _LowStockCard extends StatelessWidget {
 
 class _PenjualanChartCard extends StatelessWidget {
   final FirestoreService firestore;
+  final DateTime? resetAt;
 
-  const _PenjualanChartCard({required this.firestore});
+  const _PenjualanChartCard({
+    required this.firestore,
+    this.resetAt,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1640,7 +2032,10 @@ class _PenjualanChartCard extends StatelessWidget {
             const Text('Penjualan 30 Hari Terakhir',
                 style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 14),
-            _SalesLineChart(firestore: firestore),
+            _SalesLineChart(
+              firestore: firestore,
+              resetAt: resetAt,
+            ),
           ],
         ),
       ),
@@ -1650,8 +2045,12 @@ class _PenjualanChartCard extends StatelessWidget {
 
 class _SalesLineChart extends StatelessWidget {
   final FirestoreService firestore;
+  final DateTime? resetAt;
 
-  const _SalesLineChart({required this.firestore});
+  const _SalesLineChart({
+    required this.firestore,
+    this.resetAt,
+  });
 
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
@@ -1664,7 +2063,12 @@ class _SalesLineChart extends StatelessWidget {
       stream: firestore.streamSemuaTransaksi(),
       builder: (context, snapshot) {
         final now = DateTime.now();
-        final transaksi = snapshot.data ?? const <Transaksi>[];
+        final transaksiRaw = snapshot.data ?? const <Transaksi>[];
+        final transaksi = resetAt == null
+            ? transaksiRaw
+            : transaksiRaw
+                .where((t) => !t.tanggal.isBefore(resetAt!))
+                .toList();
         final values = <int>[];
         var total = 0;
         for (var i = 29; i >= 0; i--) {

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../core/ui/app_feedback.dart';
 import '../../core/ui/interactive_widgets.dart';
 import '../../database/models/produk_model.dart';
 import '../../database/services/firestore_service.dart';
@@ -656,6 +657,46 @@ class _HalamanStokState extends State<HalamanStok> {
               HoverButton(
                 child: ElevatedButton(
                   onPressed: () async {
+                    final missing = <String>[];
+                    final namaText = namaC.text.trim();
+                    final hargaModalText = hargaModalC.text.trim();
+                    final hargaText = hargaC.text.trim();
+                    if (namaText.isEmpty) {
+                      missing.add('Nama Produk');
+                    }
+                    if (hargaModalText.isEmpty) {
+                      missing.add('Harga Modal');
+                    }
+                    if (hargaText.isEmpty) {
+                      missing.add('Harga Jual');
+                    }
+                    if (hargaModalText.isNotEmpty &&
+                        hargaText.isNotEmpty &&
+                        labaPersenC.text.trim().isEmpty) {
+                      final modal = parseAngka(hargaModalText);
+                      final jual = parseAngka(hargaText);
+                      if (modal > 0) {
+                        labaPersenC.text =
+                            (((jual - modal) / modal) * 100).round().toString();
+                      }
+                    }
+                    if (labaPersenC.text.trim().isEmpty) {
+                      missing.add('Laba (%)');
+                    }
+                    final stokText =
+                        produk == null ? stokAwalC.text : stokC.text;
+                    if (stokText.trim().isEmpty) {
+                      missing.add(produk == null ? 'Stok Awal' : 'Stok');
+                    }
+                    if (missing.isNotEmpty) {
+                      if (!context.mounted) return;
+                      AppFeedback.show(
+                        context,
+                        message: 'Mohon isi: ${missing.join(', ')}',
+                        type: AppFeedbackType.info,
+                      );
+                      return;
+                    }
                     final harga = parseAngka(hargaC.text);
                     final hargaModal = parseAngka(hargaModalC.text);
                     try {

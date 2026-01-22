@@ -15,6 +15,8 @@ class FirestoreService {
   CollectionReference get _transaksiItemRef => _db.collection('transaksi_items');
   CollectionReference get _stokLogRef => _db.collection('stok_log');
   CollectionReference get _usersRef => _db.collection('users');
+  DocumentReference get _dashboardConfigRef =>
+      _db.collection('app_config').doc('dashboard');
 
   bool get _usePolling =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
@@ -163,7 +165,35 @@ class FirestoreService {
 
   /// HAPUS PRODUK
   Future<void> hapusProduk(String id) async {
-    await _produkRef.doc(id).delete();
+    final ref = _produkRef.doc(id);
+    final snap = await ref.get();
+    if (!snap.exists) {
+      return;
+    }
+    final data = snap.data() as Map<String, dynamic>;
+    final nama = (data['nama'] ?? 'Produk').toString();
+    final stok = (data['stok'] ?? 0) as int;
+    final hargaModal = (data['hargaModal'] ?? 0) as int;
+    final hargaJual = (data['harga'] ?? 0) as int;
+    final now = Timestamp.now();
+
+    final log = StokLog(
+      produkId: id,
+      namaProduk: nama,
+      perubahan: stok == 0 ? 0 : -stok,
+      stokAkhir: 0,
+      tipe: 'keluar',
+      waktu: now,
+    ).toMap();
+    log['sumber'] = 'EDIT';
+    log['harga_modal'] = hargaModal;
+    log['harga_jual'] = hargaJual;
+    log['catatan'] = 'hapus produk';
+
+    final batch = _db.batch();
+    batch.set(_stokLogRef.doc(), log);
+    batch.delete(ref);
+    await batch.commit();
   }
 
   /// CARI PRODUK BY BARCODE
@@ -424,6 +454,42 @@ class FirestoreService {
 
   Stream<int> streamPendapatan() => streamSemuaTransaksi()
       .map((list) => list.fold(0, (s, t) => s + t.total));
+
+  Stream<DateTime?> streamDashboardResetAt() {
+    DateTime? parseReset(DocumentSnapshot snap) {
+      if (!snap.exists) return null;
+      final data = snap.data() as Map<String, dynamic>?;
+      if (data == null) return null;
+      final ts = data['reset_at'];
+      return ts is Timestamp ? ts.toDate() : null;
+    }
+
+    if (_usePolling) {
+      return _pollWithCache(
+        load: () async {
+          final snap = await _dashboardConfigRef.get();
+          return parseReset(snap);
+        },
+        loadCache: () async {
+          final snap = await _dashboardConfigRef
+              .get(const GetOptions(source: Source.cache));
+          return parseReset(snap);
+        },
+        emitNullCache: true,
+      );
+    }
+
+    return _dashboardConfigRef
+        .snapshots()
+        .map<DateTime?>((snap) => parseReset(snap));
+  }
+
+  Future<void> setDashboardResetNow() async {
+    await _dashboardConfigRef.set(
+      {'reset_at': Timestamp.now()},
+      SetOptions(merge: true),
+    );
+  }
 
   // ===============================
   // MIGRASI (TRANSAKSI ITEMS)

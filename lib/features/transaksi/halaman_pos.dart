@@ -892,15 +892,35 @@ class _HalamanPOSState extends State<HalamanPOS> {
       return;
     }
 
+    final isMobile = defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
     try {
       final doc = await _buildReceiptPdf(
         transaksi: transaksi,
         payment: payment,
-        pageFormat: null,
-        cardStyle: true,
+        pageFormat: PdfPageFormat.a4,
+        cardStyle: false,
       );
       final bytes = await doc.save();
       final filename = '${_formatInvoice(transaksi.id)}.pdf';
+      if (isMobile) {
+        final savedPath = await savePdfToDownloads(bytes, filename);
+        if (savedPath != null) {
+          if (!mounted) return;
+          _snack('PDF tersimpan di penyimpanan aplikasi', Colors.green);
+          return;
+        }
+        final xfile = XFile.fromData(
+          bytes,
+          name: filename,
+          mimeType: 'application/pdf',
+        );
+        await Share.shareXFiles([xfile], text: 'Simpan PDF struk');
+        if (!mounted) return;
+        _snack('Pilih Bagikan untuk menyimpan PDF', Colors.orange);
+        return;
+      }
+
       final savedPath = await savePdfToDownloads(bytes, filename);
       if (savedPath == null) {
         final location = await fs.getSaveLocation(
@@ -941,7 +961,26 @@ class _HalamanPOSState extends State<HalamanPOS> {
     Transaksi transaksi,
     _PaymentResult payment,
   ) async {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+    if (kIsWeb) {
+      try {
+        final doc = await _buildReceiptPdf(
+          transaksi: transaksi,
+          payment: payment,
+          pageFormat: PdfPageFormat.a4,
+          cardStyle: true,
+        );
+        final bytes = await doc.save();
+        final filename = '${_formatInvoice(transaksi.id)}.pdf';
+        await savePdfBytesWeb(bytes, filename);
+        if (!mounted) return;
+        _snack('PDF diunduh, silakan kirim', Colors.green);
+      } catch (e) {
+        if (!mounted) return;
+        _snack('Gagal menyiapkan PDF', Colors.red);
+      }
+      return;
+    }
+    if (defaultTargetPlatform == TargetPlatform.windows) {
       _snack('Bagikan PDF belum tersedia di Windows', Colors.orange);
       return;
     }
