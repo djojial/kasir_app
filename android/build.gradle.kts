@@ -1,3 +1,5 @@
+import com.android.build.gradle.LibraryExtension
+
 allprojects {
     repositories {
         google()
@@ -14,6 +16,16 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+}
+
+subprojects {
+    if (name == "flutter_bluetooth_basic") {
+        plugins.withId("com.android.library") {
+            extensions.findByType<LibraryExtension>()?.apply {
+                namespace = "com.example.flutter_bluetooth_basic"
+            }
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

@@ -1652,6 +1652,12 @@ class _ProdukGrid extends StatelessWidget {
                             : width >= 600
                                 ? 3
                                 : 2;
+                final isPhone = width < 420;
+                final childAspectRatio = isPhone
+                    ? 0.62
+                    : width < 600
+                        ? 0.66
+                        : 0.72;
 
                 return GridView.builder(
                   shrinkWrap: shrinkWrap,
@@ -1663,7 +1669,7 @@ class _ProdukGrid extends StatelessWidget {
                     crossAxisCount: crossAxisCount,
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
-                    childAspectRatio: 0.78,
+                    childAspectRatio: childAspectRatio,
                   ),
                   itemCount: produk.length,
                   itemBuilder: (context, i) {
@@ -1709,9 +1715,17 @@ class _ProdukCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isNarrow = MediaQuery.of(context).size.width < 480;
     final cardPadding = isNarrow ? 8.0 : 12.0;
-    final imageHeight = isNarrow ? 110.0 : 140.0;
-    final titleSize = isNarrow ? 12.0 : 14.0;
-    final priceSize = isNarrow ? 14.0 : 16.0;
+    final imageHeight = isNarrow ? 100.0 : 140.0;
+    final nameLength = produk.nama.trim().length;
+    final fontScale = nameLength > 26
+        ? 0.82
+        : nameLength > 20
+            ? 0.88
+            : nameLength > 16
+                ? 0.94
+                : 1.0;
+    final titleSize = (isNarrow ? 12.0 : 14.0) * fontScale;
+    final priceSize = (isNarrow ? 14.0 : 16.0) * fontScale;
     final placeholderGradient = LinearGradient(
       colors: isDark
           ? const [Color(0xFF3A3A3A), Color(0xFF2A2A2A)]
@@ -1808,7 +1822,7 @@ class _ProdukCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Text(
                   produk.nama,
                   maxLines: 2,
@@ -1819,20 +1833,20 @@ class _ProdukCard extends StatelessWidget {
                     fontSize: titleSize,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
+                const SizedBox(height: 2),
+                Builder(
+                  builder: (context) {
+                    final priceWidget = Text(
                       _formatRupiah(produk.harga),
                       style: TextStyle(
                         fontSize: priceSize,
                         fontWeight: FontWeight.w700,
                         color: text,
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    );
+                    final badgeWidget = Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: badgeColor.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(10),
@@ -1841,12 +1855,23 @@ class _ProdukCard extends StatelessWidget {
                         habis ? 'Habis' : 'Stok ${produk.stok}',
                         style: TextStyle(
                           color: badgeColor,
-                          fontSize: isNarrow ? 11 : 12,
+                          fontSize: (isNarrow ? 11 : 12) * fontScale,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
-                  ],
+                    );
+                    if (isNarrow) {
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [priceWidget, badgeWidget],
+                      );
+                    }
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [priceWidget, badgeWidget],
+                    );
+                  },
                 ),
               ],
             ),

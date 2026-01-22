@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
@@ -79,6 +80,7 @@ class _HalamanStokState extends State<HalamanStok> {
     String? gambarBase64 = produk?.gambarBase64;
     var _syncing = false;
     var _syncingGrosir = false;
+    final maxImageBytes = 700 * 1024;
 
     final kategoriList = await firestore.ambilSemuaProduk().first;
     if (!mounted) return;
@@ -119,9 +121,23 @@ class _HalamanStokState extends State<HalamanStok> {
               : null;
           Future<void> pilihGambar(ImageSource source) async {
             final picker = ImagePicker();
-            final picked = await picker.pickImage(source: source);
+            final picked = await picker.pickImage(
+              source: source,
+              maxWidth: 1024,
+              maxHeight: 1024,
+              imageQuality: 70,
+            );
             if (picked == null) return;
             final bytes = await picked.readAsBytes();
+            if (bytes.lengthInBytes > maxImageBytes) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Ukuran foto terlalu besar untuk disimpan.'),
+                ),
+              );
+              return;
+            }
             setModalState(() {
               gambarBase64 = base64Encode(bytes);
             });
@@ -161,32 +177,90 @@ class _HalamanStokState extends State<HalamanStok> {
           Future<void> scanBarcode() async {
             final controller = MobileScannerController();
             bool handled = false;
-            final result = await showDialog<String>(
-              context: context,
-              builder: (dialogContext) {
-                return AlertDialog(
-                  title: const Text('Scan Barcode'),
-                  content: SizedBox(
-                    width: 420,
-                    height: 320,
-                    child: MobileScanner(
-                      controller: controller,
-                      onDetect: (capture) {
-                        if (handled) return;
-                        final code = capture.barcodes.first.rawValue;
-                        if (code == null) return;
-                        handled = true;
-                        Navigator.of(dialogContext).pop(code);
-                      },
-                    ),
+            final canUseCamera = kIsWeb ||
+                defaultTargetPlatform == TargetPlatform.android ||
+                defaultTargetPlatform == TargetPlatform.iOS;
+            if (!canUseCamera) {
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Scan kamera hanya tersedia di Android/iOS/Web. Gunakan input manual.',
                   ),
-                );
-              },
-            );
-            controller.dispose();
-            if (result == null) return;
+                ),
+              );
+              return;
+            }
+
+            String? result;
+            bool started = false;
+            try {
+              result = await showDialog<String>(
+                context: context,
+                builder: (dialogContext) {
+                  if (!started) {
+                    started = true;
+                    Future.microtask(() => controller.start());
+                  }
+                  return AlertDialog(
+                    title: const Text('Scan Barcode'),
+                    content: SizedBox(
+                      width: 420,
+                      height: 320,
+                      child: MobileScanner(
+                        controller: controller,
+                        errorBuilder: (context, error, child) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.videocam_off, size: 40),
+                                  const SizedBox(height: 8),
+                                  const Text('Kamera tidak bisa diakses'),
+                                  const SizedBox(height: 4),
+                                  const Text(
+                                    'Untuk web, gunakan https atau localhost.',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                    icon: const Icon(Icons.close),
+                                    label: const Text('Tutup'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        onDetect: (capture) {
+                          if (handled) return;
+                          final barcodes = capture.barcodes;
+                          if (barcodes.isEmpty) return;
+                          final code = barcodes.first.rawValue;
+                          if (code == null) return;
+                          handled = true;
+                          controller.stop();
+                          Navigator.of(dialogContext).pop(code);
+                        },
+                      ),
+                    ),
+                  );
+                },
+              );
+            } finally {
+              try {
+                await controller.stop();
+              } catch (_) {}
+              controller.dispose();
+            }
+            final scanned = result;
+            if (scanned == null) return;
             setModalState(() {
-              barcodeC.text = result;
+              barcodeC.text = scanned;
             });
           }
 
@@ -584,56 +658,76 @@ class _HalamanStokState extends State<HalamanStok> {
                   onPressed: () async {
                     final harga = parseAngka(hargaC.text);
                     final hargaModal = parseAngka(hargaModalC.text);
-                    if (produk == null) {
-                      final stokAwal = int.tryParse(stokAwalC.text) ?? 0;
-                      final diskonMinQty =
-                          int.tryParse(diskonMinQtyC.text) ?? 0;
-                      final diskonPersen =
-                          (int.tryParse(diskonPersenC.text) ?? 0).clamp(0, 100);
-                      final diskonHarga = parseAngka(diskonHargaC.text);
+                    try {
+                      if (produk == null) {
+                        final stokAwal = int.tryParse(stokAwalC.text) ?? 0;
+                        final diskonMinQty =
+                            int.tryParse(diskonMinQtyC.text) ?? 0;
+                        final diskonPersen = (int.tryParse(diskonPersenC.text) ??
+                                0)
+                            .clamp(0, 100);
+                        final diskonHarga = parseAngka(diskonHargaC.text);
 
-                    final p = Produk(
-                      nama: namaC.text,
-                      barcode: barcodeC.text,
-                      kategori: kategoriC.text.trim().isEmpty
-                          ? 'Lainnya'
-                          : kategoriC.text.trim(),
-                      harga: harga,
-                      hargaModal: hargaModal,
-                      diskonMinQty: diskonMinQty,
-                      diskonHarga: diskonHarga,
-                      diskonPersen: diskonPersen,
-                      gambarBase64: gambarBase64,
-                      stok: stokAwal,
-                      dibuatPada: Timestamp.now(),
-                    );
+                        final p = Produk(
+                          nama: namaC.text,
+                          barcode: barcodeC.text,
+                          kategori: kategoriC.text.trim().isEmpty
+                              ? 'Lainnya'
+                              : kategoriC.text.trim(),
+                          harga: harga,
+                          hargaModal: hargaModal,
+                          diskonMinQty: diskonMinQty,
+                          diskonHarga: diskonHarga,
+                          diskonPersen: diskonPersen,
+                          gambarBase64: gambarBase64,
+                          stok: stokAwal,
+                          dibuatPada: Timestamp.now(),
+                        );
 
-                    await firestore.tambahProdukDenganLog(p, stokAwal);
-                  } else {
-                    final diskonMinQty =
-                        int.tryParse(diskonMinQtyC.text) ?? 0;
-                    final diskonPersen =
-                        (int.tryParse(diskonPersenC.text) ?? 0).clamp(0, 100);
-                    final diskonHarga = parseAngka(diskonHargaC.text);
-                    final p = Produk(
-                      id: produk.id,
-                      nama: namaC.text,
-                      barcode: barcodeC.text,
-                      kategori: kategoriC.text.trim().isEmpty
-                          ? 'Lainnya'
-                          : kategoriC.text.trim(),
-                      harga: harga,
-                      hargaModal: hargaModal,
-                      diskonMinQty: diskonMinQty,
-                      diskonHarga: diskonHarga,
-                      diskonPersen: diskonPersen,
-                      gambarBase64: gambarBase64,
-                      stok: int.tryParse(stokC.text) ?? 0,
-                      dibuatPada: produk.dibuatPada,
-                    );
+                        await firestore.tambahProdukDenganLog(p, stokAwal);
+                      } else {
+                        final diskonMinQty =
+                            int.tryParse(diskonMinQtyC.text) ?? 0;
+                        final diskonPersen = (int.tryParse(diskonPersenC.text) ??
+                                0)
+                            .clamp(0, 100);
+                        final diskonHarga = parseAngka(diskonHargaC.text);
+                        final p = Produk(
+                          id: produk.id,
+                          nama: namaC.text,
+                          barcode: barcodeC.text,
+                          kategori: kategoriC.text.trim().isEmpty
+                              ? 'Lainnya'
+                              : kategoriC.text.trim(),
+                          harga: harga,
+                          hargaModal: hargaModal,
+                          diskonMinQty: diskonMinQty,
+                          diskonHarga: diskonHarga,
+                          diskonPersen: diskonPersen,
+                          gambarBase64: gambarBase64,
+                          stok: int.tryParse(stokC.text) ?? 0,
+                          dibuatPada: produk.dibuatPada,
+                        );
 
-                    await firestore.updateProduk(p);
-                  }
+                        await firestore.updateProduk(p);
+                      }
+                    } on FirebaseException catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Gagal simpan: ${e.code}'),
+                        ),
+                      );
+                      return;
+                    } catch (_) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Gagal simpan data produk.'),
+                        ),
+                      );
+                      return;
+                    }
 
                     if (!mounted) return;
                     Navigator.pop(context);
@@ -648,8 +742,34 @@ class _HalamanStokState extends State<HalamanStok> {
     );
   }
 
-  void _hapusProduk(String id) async {
-    await firestore.hapusProduk(id);
+  Future<void> _hapusProduk(Produk produk) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Hapus produk?'),
+          content: Text(
+            'Produk "${produk.nama}" akan dihapus beserta stoknya. Lanjutkan?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFB42318),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Hapus'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true) return;
+    await firestore.hapusProduk(produk.id!);
   }
   @override
   void dispose() {
@@ -858,7 +978,7 @@ class _TabelStok extends StatelessWidget {
   final FirestoreService firestore;
   final String kataKunci;
   final void Function(Produk)? onEdit;
-  final void Function(String)? onHapus;
+  final void Function(Produk)? onHapus;
   final bool showActions;
 
   const _TabelStok({
@@ -1068,7 +1188,7 @@ class _TabelStok extends StatelessWidget {
                                           icon: const Icon(Icons.delete_outline,
                                               color: Color(0xFFB42318)),
                                           iconSize: 22,
-                                          onPressed: () => onHapus!(p.id!),
+                                          onPressed: () => onHapus!(p),
                                         ),
                                     ],
                                   ),
