@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 
+import '../../core/widgets/web_barcode_scanner.dart';
 import '../../database/models/produk_model.dart';
 import '../../database/services/firestore_service.dart';
 class HalamanScanBarcode extends StatefulWidget {
@@ -14,13 +16,14 @@ class HalamanScanBarcode extends StatefulWidget {
 }
 
 class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
-  final MobileScannerController controller = MobileScannerController();
-  final TextEditingController inputManual = TextEditingController();
   final FirestoreService firestore = FirestoreService();
+  bool _isProcessing = false;
+  String? _webError;
+  bool _webStarted = false;
+  int _restartToken = 0;
 
   String? hasilScan;
   Produk? produk;
-  bool modeKamera = true;
 
   bool get canUseCamera {
     if (kIsWeb) return true;
@@ -28,18 +31,16 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
         defaultTargetPlatform == TargetPlatform.iOS;
   }
 
+  bool get isWindowsDesktop =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
   @override
   void initState() {
     super.initState();
-    if (modeKamera && canUseCamera) {
-      controller.start();
-    }
   }
 
   @override
   void dispose() {
-    controller.dispose();
-    inputManual.dispose();
     super.dispose();
   }
 
@@ -69,253 +70,149 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 3,
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: _panelDecoration(context),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 860;
+          final scanPanel = Container(
+            padding: const EdgeInsets.all(20),
+            decoration: _panelDecoration(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Scan Produk',
-                            style: TextStyle(fontWeight: FontWeight.w600)),
-                        TextButton.icon(
-                          onPressed: widget.onBackToDashboard ??
-                              () {
-                                Navigator.of(context).maybePop();
-                              },
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text('Dashboard'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ModeButton(
-                            active: modeKamera,
-                            icon: Icons.camera_alt_outlined,
-                            label: 'Scan kamera',
-                            onTap: () {
-                              setState(() => modeKamera = true);
-                              if (canUseCamera) {
-                                controller.start();
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _ModeButton(
-                            active: !modeKamera,
-                            icon: Icons.keyboard_outlined,
-                            label: 'Input manual',
-                            onTap: () {
-                              setState(() => modeKamera = false);
-                              if (canUseCamera) {
-                                controller.stop();
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Expanded(
-                      child: modeKamera && canUseCamera
-                          ? Container(
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0xFF1F1F1F)
-                                    : const Color(0xFFF1EFEB),
-                                borderRadius: BorderRadius.circular(16),
-                                border:
-                                    Border.all(color: Theme.of(context).dividerColor),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: MobileScanner(
-                                  controller: controller,
-                                  errorBuilder: (context, error, child) {
-                                    return _CameraErrorPanel(
-                                      error: error,
-                                      onRetry: () {
-                                        controller.start();
-                                        setState(() {});
-                                      },
-                                      onManual: () {
-                                        setState(() => modeKamera = false);
-                                        controller.stop();
-                                      },
-                                    );
-                                  },
-                                  onDetect: (capture) {
-                                    final barcode = capture.barcodes.first;
-                                    final value = barcode.rawValue;
-
-                                    if (value != null) {
-                                      controller.stop();
-                                      _prosesBarcode(value);
-                                    }
-                                  },
-                                ),
-                              ),
-                            )
-                          : Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0xFF1F1F1F)
-                                    : const Color(0xFFF1EFEB),
-                                borderRadius: BorderRadius.circular(16),
-                                border:
-                                    Border.all(color: Theme.of(context).dividerColor),
-                              ),
-                              child: Column(
-                                children: [
-                                  TextField(
-                                    controller: inputManual,
-                                    decoration: InputDecoration(
-                                      labelText: 'Kode barcode',
-                                      suffixIcon: Icon(
-                                        Icons.qr_code_scanner,
-                                        color: Theme.of(context).colorScheme.primary,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Theme.of(context).brightness == Brightness.dark
-                                              ? const Color(0xFF1C1C1C)
-                                              : const Color(0xFFF1EFEB),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                            color: Theme.of(context).dividerColor),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Theme.of(context).colorScheme.primary,
-                                        ),
-                                      ),
-                                    ),
-                                    onSubmitted: (v) {
-                                      if (v.isNotEmpty) {
-                                        _prosesBarcode(v);
-                                        inputManual.clear();
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(height: 16),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton(
-                                      onPressed: () {
-                                        if (inputManual.text.isNotEmpty) {
-                                          _prosesBarcode(inputManual.text);
-                                          inputManual.clear();
-                                        }
-                                      },
-                                      child: const Text('Scan'),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  const Text(
-                                    'Gunakan input manual untuk desktop/web.',
-                                    style: TextStyle(color: Color(0xFF7C776D)),
-                                  ),
-                                ],
-                              ),
-                            ),
+                    const Text('Scan Produk',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    TextButton.icon(
+                      onPressed: widget.onBackToDashboard ??
+                          () {
+                            Navigator.of(context).maybePop();
+                          },
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Kembali'),
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              flex: 2,
-              child: _HasilScanCard(produk: produk, hasilScan: hasilScan),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+                const SizedBox(height: 12),
+                Expanded(
+                  child: isWindowsDesktop
+                      ? _WebStartPrompt(
+                          onStart: () async {
+                            final result =
+                                await SimpleBarcodeScanner.scanBarcode(context);
+                            if (result == null ||
+                                result.isEmpty ||
+                                result == '-1') {
+                              return;
+                            }
+                            if (_isProcessing) return;
+                            _isProcessing = true;
+                            _prosesBarcode(result);
+                          },
+                        )
+                      : canUseCamera
+                      ? Container(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF1F1F1F)
+                                : const Color(0xFFF1EFEB),
+                            borderRadius: BorderRadius.circular(16),
+                            border:
+                                Border.all(color: Theme.of(context).dividerColor),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: kIsWeb
+                                ? (_webError != null
+                                    ? _CameraErrorPanel(
+                                        error: _webError!,
+                                        onRetry: () {
+                                          setState(() {
+                                            _webError = null;
+                                            _webStarted = false;
+                                            _restartToken++;
+                                          });
+                                        },
+                                      )
+                                    : (!_webStarted
+                                        ? _WebStartPrompt(
+                                            onStart: () {
+                                              setState(() {
+                                                _webStarted = true;
+                                                _restartToken++;
+                                              });
+                                            },
+                                          )
+                                        : WebBarcodeScanner(
+                                            key: ValueKey(_restartToken),
+                                            onDetect: (value) {
+                                              if (_isProcessing) return;
+                                              _isProcessing = true;
+                                              _prosesBarcode(value);
+                                            },
+                                            onError: (message) {
+                                              if (!mounted) return;
+                                              setState(() {
+                                                _webError = message;
+                                                _webStarted = false;
+                                              });
+                                            },
+                                          )))
+                                : MobileScanner(
+                                    errorBuilder: (context, error, child) {
+                                      return _CameraErrorPanel(
+                                        error: error,
+                                        onRetry: () {
+                                          setState(() {});
+                                        },
+                                      );
+                                    },
+                                    onDetect: (capture) {
+                                      if (_isProcessing) return;
+                                      final barcode = capture.barcodes.first;
+                                      final value = barcode.rawValue;
 
-class _ModeButton extends StatelessWidget {
-  final bool active;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ModeButton({
-    required this.active,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-          decoration: BoxDecoration(
-            color: active
-                ? Theme.of(context)
-                    .colorScheme
-                    .primary
-                    .withValues(alpha: 0.12)
-                : (Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF1F1F1F)
-                    : const Color(0xFFF1EFEB)),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: active
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).dividerColor,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                color: active
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.6),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: active
-                      ? Theme.of(context).colorScheme.onSurface
-                      : Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.6),
+                                      if (value != null) {
+                                        _isProcessing = true;
+                                        _prosesBarcode(value);
+                                      }
+                                    },
+                                  ),
+                          ),
+                        )
+                      : _CameraErrorPanel(
+                          error: 'Kamera tidak didukung di platform ini.',
+                          onRetry: () {
+                            setState(() {});
+                          },
+                        ),
                 ),
-              ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          );
+          final hasilCard =
+              _HasilScanCard(produk: produk, hasilScan: hasilScan);
+
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: isNarrow
+                ? Column(
+                    children: [
+                      Flexible(flex: 3, child: scanPanel),
+                      const SizedBox(height: 20),
+                      Flexible(flex: 2, child: hasilCard),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(flex: 3, child: scanPanel),
+                      const SizedBox(width: 20),
+                      Expanded(flex: 2, child: hasilCard),
+                    ],
+                  ),
+          );
+        },
       ),
     );
   }
@@ -409,15 +306,41 @@ class _HasilScanCard extends StatelessWidget {
   }
 }
 
+class _WebStartPrompt extends StatelessWidget {
+  final VoidCallback onStart;
+
+  const _WebStartPrompt({required this.onStart});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.videocam, size: 48),
+          const SizedBox(height: 12),
+          const Text('Mulai kamera untuk scan barcode'),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: onStart,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Mulai kamera'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CameraErrorPanel extends StatelessWidget {
   final Object error;
   final VoidCallback onRetry;
-  final VoidCallback onManual;
+  final VoidCallback? onManual;
 
   const _CameraErrorPanel({
     required this.error,
     required this.onRetry,
-    required this.onManual,
+    this.onManual,
   });
 
   @override
@@ -450,6 +373,19 @@ class _CameraErrorPanel extends StatelessWidget {
               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
+          if (error is String) ...[
+            const SizedBox(height: 8),
+            Text(
+              error.toString(),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.6),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Wrap(
             spacing: 8,
@@ -460,11 +396,12 @@ class _CameraErrorPanel extends StatelessWidget {
                 icon: const Icon(Icons.refresh),
                 label: const Text('Coba lagi'),
               ),
-              ElevatedButton.icon(
-                onPressed: onManual,
-                icon: const Icon(Icons.keyboard),
-                label: const Text('Input manual'),
-              ),
+              if (onManual != null)
+                ElevatedButton.icon(
+                  onPressed: onManual,
+                  icon: const Icon(Icons.keyboard),
+                  label: const Text('Input manual'),
+                ),
             ],
           ),
         ],

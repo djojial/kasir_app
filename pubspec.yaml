@@ -17,6 +17,7 @@ dependencies:
 
   # 📱 Fitur tambahan
   mobile_scanner: ^4.0.1
+  simple_barcode_scanner: ^0.3.0
   google_sign_in: ^6.2.1
   http: ^1.2.2
   image_picker: ^1.1.2

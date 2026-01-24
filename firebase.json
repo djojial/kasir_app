@@ -32,6 +32,17 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(self)"
+          }
+        ]
+      }
+    ],
     "rewrites": [
       {
         "source": "**",

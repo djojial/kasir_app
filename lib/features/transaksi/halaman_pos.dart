@@ -36,6 +36,31 @@ class _HalamanPOSState extends State<HalamanPOS> {
   bool _cartSheetOpen = false;
   Timer? _emptyReloadTimer;
   bool _showEmptyReload = false;
+  Future<void> _openScanDialog() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        final media = MediaQuery.of(context);
+        final maxWidth =
+            media.size.width < 900 ? media.size.width - 32 : 960.0;
+        final maxHeight = media.size.height - 32;
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: maxWidth,
+              maxHeight: maxHeight,
+            ),
+            child: HalamanScanBarcode(
+              onBackToDashboard: () => Navigator.of(context).maybePop(),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   // =========================
   // TAMBAH KE KERANJANG
@@ -1314,13 +1339,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
                                   setState(() => _kataKunciProduk = value),
                               onKategori: (value) =>
                                   setState(() => _kategoriAktif = value),
-                              onScan: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => const HalamanScanBarcode(),
-                                  ),
-                                );
-                              },
+                                onScan: _openScanDialog,
                               onSubmit: (value) => _onSearchSubmit(value, produk),
                             ),
                             const SizedBox(height: 16),
@@ -1362,13 +1381,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
                           setState(() => _kataKunciProduk = value),
                       onKategori: (value) =>
                           setState(() => _kategoriAktif = value),
-                      onScan: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const HalamanScanBarcode(),
-                          ),
-                        );
-                      },
+                        onScan: _openScanDialog,
                       onSubmit: (value) => _onSearchSubmit(value, produk),
                     ),
                     const SizedBox(height: 16),

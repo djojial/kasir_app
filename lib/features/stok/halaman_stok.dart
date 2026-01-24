@@ -8,9 +8,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 
 import '../../core/ui/app_feedback.dart';
 import '../../core/ui/interactive_widgets.dart';
+import '../../core/widgets/web_barcode_scanner.dart';
 import '../../database/models/produk_model.dart';
 import '../../database/services/firestore_service.dart';
 
@@ -176,12 +178,13 @@ class _HalamanStokState extends State<HalamanStok> {
           }
 
           Future<void> scanBarcode() async {
-            final controller = MobileScannerController();
             bool handled = false;
+            final isWindowsDesktop =
+                !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
             final canUseCamera = kIsWeb ||
                 defaultTargetPlatform == TargetPlatform.android ||
                 defaultTargetPlatform == TargetPlatform.iOS;
-            if (!canUseCamera) {
+            if (!canUseCamera && !isWindowsDesktop) {
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -194,58 +197,141 @@ class _HalamanStokState extends State<HalamanStok> {
             }
 
             String? result;
-            bool started = false;
             try {
+              if (isWindowsDesktop) {
+                result = await SimpleBarcodeScanner.scanBarcode(context);
+                if (result == null || result.isEmpty || result == '-1') {
+                  return;
+                }
+                if (!context.mounted) return;
+                setModalState(() {
+                  barcodeC.text = result!;
+                });
+                return;
+              }
               result = await showDialog<String>(
                 context: context,
                 builder: (dialogContext) {
-                  if (!started) {
-                    started = true;
-                    Future.microtask(() => controller.start());
-                  }
+                  String? webError;
+                  bool webStarted = false;
+                  int restartToken = 0;
                   return AlertDialog(
                     title: const Text('Scan Barcode'),
                     content: SizedBox(
                       width: 420,
                       height: 320,
-                      child: MobileScanner(
-                        controller: controller,
-                        errorBuilder: (context, error, child) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.videocam_off, size: 40),
-                                  const SizedBox(height: 8),
-                                  const Text('Kamera tidak bisa diakses'),
-                                  const SizedBox(height: 4),
-                                  const Text(
-                                    'Untuk web, gunakan https atau localhost.',
-                                    textAlign: TextAlign.center,
+                      child: StatefulBuilder(
+                        builder: (context, setDialogState) {
+                          if (kIsWeb) {
+                            if (webError != null) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.videocam_off, size: 40),
+                                      const SizedBox(height: 8),
+                                      const Text('Kamera tidak bisa diakses'),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        webError!,
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      OutlinedButton.icon(
+                                        onPressed: () {
+                                          setDialogState(() {
+                                            webError = null;
+                                            webStarted = false;
+                                            restartToken++;
+                                          });
+                                        },
+                                        icon: const Icon(Icons.refresh),
+                                        label: const Text('Coba lagi'),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 12),
-                                  OutlinedButton.icon(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(),
-                                    icon: const Icon(Icons.close),
-                                    label: const Text('Tutup'),
+                                ),
+                              );
+                            }
+                            if (!webStarted) {
+                              return Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.videocam, size: 40),
+                                    const SizedBox(height: 8),
+                                    const Text('Mulai kamera untuk scan barcode'),
+                                    const SizedBox(height: 12),
+                                    ElevatedButton.icon(
+                                      onPressed: () {
+                                        setDialogState(() {
+                                          webStarted = true;
+                                          restartToken++;
+                                        });
+                                      },
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: const Text('Mulai kamera'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            return WebBarcodeScanner(
+                              key: ValueKey(restartToken),
+                              onDetect: (code) {
+                                if (handled) return;
+                                handled = true;
+                                Navigator.of(dialogContext).pop(code);
+                              },
+                              onError: (message) {
+                                setDialogState(() {
+                                  webError = message;
+                                  webStarted = false;
+                                });
+                              },
+                            );
+                          }
+
+                          return MobileScanner(
+                            errorBuilder: (context, error, child) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.videocam_off, size: 40),
+                                      const SizedBox(height: 8),
+                                      const Text('Kamera tidak bisa diakses'),
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Untuk web, gunakan https atau localhost.',
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      OutlinedButton.icon(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(),
+                                        icon: const Icon(Icons.close),
+                                        label: const Text('Tutup'),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
+                                ),
+                              );
+                            },
+                            onDetect: (capture) {
+                              if (handled) return;
+                              final barcodes = capture.barcodes;
+                              if (barcodes.isEmpty) return;
+                              final code = barcodes.first.rawValue;
+                              if (code == null) return;
+                              handled = true;
+                              Navigator.of(dialogContext).pop(code);
+                            },
                           );
-                        },
-                        onDetect: (capture) {
-                          if (handled) return;
-                          final barcodes = capture.barcodes;
-                          if (barcodes.isEmpty) return;
-                          final code = barcodes.first.rawValue;
-                          if (code == null) return;
-                          handled = true;
-                          controller.stop();
-                          Navigator.of(dialogContext).pop(code);
                         },
                       ),
                     ),
@@ -253,10 +339,6 @@ class _HalamanStokState extends State<HalamanStok> {
                 },
               );
             } finally {
-              try {
-                await controller.stop();
-              } catch (_) {}
-              controller.dispose();
             }
             final scanned = result;
             if (scanned == null) return;
