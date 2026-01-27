@@ -36,6 +36,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
   bool _cartSheetOpen = false;
   Timer? _emptyReloadTimer;
   bool _showEmptyReload = false;
+  Map<String, String>? _actorCache;
   Future<void> _openScanDialog() async {
     await showDialog<void>(
       context: context,
@@ -55,6 +56,8 @@ class _HalamanPOSState extends State<HalamanPOS> {
             ),
             child: HalamanScanBarcode(
               onBackToDashboard: () => Navigator.of(context).maybePop(),
+              onAddToCart: (produk) =>
+                  tambahKeKeranjang(produk, openCartSheet: false),
             ),
           ),
         );
@@ -65,7 +68,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
   // =========================
   // TAMBAH KE KERANJANG
   // =========================
-  void tambahKeKeranjang(Produk produk) {
+  void tambahKeKeranjang(Produk produk, {bool openCartSheet = true}) {
     if (produk.stok <= 0) {
       _snack("Barang tidak tersedia", Colors.red);
       return;
@@ -89,7 +92,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
       }
     });
 
-    if (MediaQuery.of(context).size.width < 720) {
+    if (openCartSheet && MediaQuery.of(context).size.width < 720) {
       _openCartSheet();
     }
   }
@@ -188,6 +191,23 @@ class _HalamanPOSState extends State<HalamanPOS> {
     return 'Kasir';
   }
 
+  Future<Map<String, String>> _resolveActor() async {
+    if (_actorCache != null) return _actorCache!;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _actorCache = {'name': 'Unknown'};
+      return _actorCache!;
+    }
+    final email = user.email ?? '';
+    final name = await _resolveNamaKasir();
+    _actorCache = {
+      'uid': user.uid,
+      'email': email,
+      'name': name,
+    };
+    return _actorCache!;
+  }
+
   Future<void> _commitPembayaran(_PaymentResult payment) async {
     if (keranjang.isEmpty) return;
 
@@ -226,6 +246,18 @@ class _HalamanPOSState extends State<HalamanPOS> {
       );
 
       await firestore.simpanTransaksi(transaksi);
+      final actor = await _resolveActor();
+      await firestore.logActivity(
+        action: 'transaksi',
+        category: 'transaksi',
+        targetId: transaksi.id,
+        targetLabel: transaksi.id,
+        meta: {
+          'total': payment.total,
+          'items': keranjang.length,
+        },
+        actor: actor,
+      );
 
       final baseTotal = totalBayar;
       final ratio = baseTotal > 0 ? payment.total / baseTotal : 1.0;
@@ -277,16 +309,15 @@ class _HalamanPOSState extends State<HalamanPOS> {
           int totalAfterDiscount = totalBayar;
           int change = paidAmount - totalAfterDiscount;
           bool editingDiscount = false;
+          bool invalidDiscount = false;
 
           return StatefulBuilder(
             builder: (context, setModalState) {
               void recalcTotals() {
                 final parsedPaid = _parseAngkaText(paidController.text);
                 var parsedDiskon = _parseAngkaText(discountController.text);
-                if (parsedDiskon > totalBayar) {
-                  parsedDiskon = totalBayar;
-                  discountController.text = _formatAngkaPlain(parsedDiskon);
-                }
+                invalidDiscount =
+                    totalBayar > 0 && parsedDiskon >= totalBayar;
                 final updatedTotal = totalBayar - parsedDiskon;
                 setModalState(() {
                   paidAmount = parsedPaid;
@@ -363,6 +394,17 @@ class _HalamanPOSState extends State<HalamanPOS> {
                                 prefixIcon: Icon(Icons.discount_outlined),
                               ),
                             ),
+                            if (invalidDiscount) ...[
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Harap Sesuaikan Nominal Diskon',
+                                style: TextStyle(
+                                  color: Color(0xFFE84C3D),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                             if (method == 'Cash') ...[
                               const SizedBox(height: 12),
                               Expanded(
@@ -463,6 +505,13 @@ class _HalamanPOSState extends State<HalamanPOS> {
                                         if (method == 'Cash' &&
                                             paidAmount < totalAfterDiscount) {
                                           _snack('Uang belum cukup', Colors.orange);
+                                          return;
+                                        }
+                                        if (invalidDiscount) {
+                                          _snack(
+                                            'Harap Sesuaikan Nominal Diskon',
+                                            Colors.orange,
+                                          );
                                           return;
                                         }
                                         final finalPaid = method == 'Cash'

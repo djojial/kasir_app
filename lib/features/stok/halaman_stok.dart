@@ -5,6 +5,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -37,6 +38,35 @@ class _HalamanStokState extends State<HalamanStok> {
   final TextEditingController _cariC = TextEditingController();
   String _kataKunci = '';
   bool get _showActions => widget.canEdit || widget.canDelete;
+  Map<String, String>? _actorCache;
+
+  Future<Map<String, String>> _resolveActor() async {
+    if (_actorCache != null) return _actorCache!;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _actorCache = {'name': 'Unknown'};
+      return _actorCache!;
+    }
+    final email = user.email ?? '';
+    var name = user.displayName?.trim() ?? '';
+    try {
+      final profile =
+          await firestore.streamUserProfile(user.uid, email: user.email).first;
+      final nick = (profile?['nama_panggilan'] ?? '').toString().trim();
+      if (nick.isNotEmpty) {
+        name = nick;
+      }
+    } catch (_) {}
+    if (name.isEmpty && email.isNotEmpty) {
+      name = email.split('@').first;
+    }
+    _actorCache = {
+      'uid': user.uid,
+      'email': email,
+      'name': name,
+    };
+    return _actorCache!;
+  }
 
   Future<void> _formProduk(Produk? produk) async {
     String formatAngka(int value) {
@@ -807,7 +837,12 @@ class _HalamanStokState extends State<HalamanStok> {
                           dibuatPada: Timestamp.now(),
                         );
 
-                        await firestore.tambahProdukDenganLog(p, stokAwal);
+                        final actor = await _resolveActor();
+                        await firestore.tambahProdukDenganLog(
+                          p,
+                          stokAwal,
+                          actor: actor,
+                        );
                       } else {
                         final diskonMinQty =
                             int.tryParse(diskonMinQtyC.text) ?? 0;
@@ -832,7 +867,11 @@ class _HalamanStokState extends State<HalamanStok> {
                           dibuatPada: produk.dibuatPada,
                         );
 
-                        await firestore.updateProduk(p);
+                        final actor = await _resolveActor();
+                        await firestore.updateProduk(
+                          p,
+                          actor: actor,
+                        );
                       }
                     } on FirebaseException catch (e) {
                       if (!context.mounted) return;
@@ -892,7 +931,11 @@ class _HalamanStokState extends State<HalamanStok> {
       },
     );
     if (confirmed != true) return;
-    await firestore.hapusProduk(produk.id!);
+    final actor = await _resolveActor();
+    await firestore.hapusProduk(
+      produk.id!,
+      actor: actor,
+    );
   }
   @override
   void dispose() {

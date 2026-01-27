@@ -14,9 +14,12 @@ class FirestoreService {
   CollectionReference get _transaksiRef => _db.collection('transaksi');
   CollectionReference get _transaksiItemRef => _db.collection('transaksi_items');
   CollectionReference get _stokLogRef => _db.collection('stok_log');
+  CollectionReference get _activityLogRef => _db.collection('activity_logs');
   CollectionReference get _usersRef => _db.collection('users');
   DocumentReference get _dashboardConfigRef =>
       _db.collection('app_config').doc('dashboard');
+  DocumentReference get _roleAccessConfigRef =>
+      _db.collection('app_config').doc('role_access');
 
   bool get _usePolling =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
@@ -47,7 +50,11 @@ class FirestoreService {
   // ===============================
 
   /// TAMBAH PRODUK + LOG STOK AWAL
-  Future<void> tambahProdukDenganLog(Produk p, int stokAwal) async {
+  Future<void> tambahProdukDenganLog(
+    Produk p,
+    int stokAwal, {
+    Map<String, String>? actor,
+  }) async {
     final doc = await _produkRef.add(p.toMap());
 
     final log = StokLog(
@@ -64,6 +71,19 @@ class FirestoreService {
     log['harga_jual'] = p.harga;
 
     await _stokLogRef.add(log);
+
+    await logActivity(
+      action: 'produk_tambah',
+      category: 'produk',
+      targetId: doc.id,
+      targetLabel: p.nama,
+      meta: {
+        'stok_awal': stokAwal,
+        'harga': p.harga,
+        'harga_modal': p.hargaModal,
+      },
+      actor: actor,
+    );
   }
 
   /// AMBIL SEMUA PRODUK
@@ -113,23 +133,28 @@ class FirestoreService {
   }
 
   /// UPDATE PRODUK
-  Future<void> updateProduk(Produk p) async {
+  Future<void> updateProduk(Produk p, {Map<String, String>? actor}) async {
     if (p.id == null) return;
     final ref = _produkRef.doc(p.id);
+    int? stokLama;
+    int? hargaLama;
+    int? modalLama;
+    String? namaLama;
     await _db.runTransaction((trx) async {
       final snap = await trx.get(ref);
       if (!snap.exists) return;
 
       final data = snap.data() as Map<String, dynamic>;
-      final stokLama = (data['stok'] ?? 0) as int;
-      final hargaLama = (data['harga'] ?? 0) as int;
-      final modalLama = (data['harga_modal'] ?? 0) as int;
+      stokLama = (data['stok'] ?? 0) as int;
+      hargaLama = (data['harga'] ?? 0) as int;
+      modalLama = (data['harga_modal'] ?? 0) as int;
+      namaLama = (data['nama'] ?? '').toString();
 
       trx.update(ref, p.toMap());
 
       final now = Timestamp.now();
       if (p.stok != stokLama) {
-        final perubahan = p.stok - stokLama;
+        final perubahan = p.stok - stokLama!;
         final log = StokLog(
           produkId: p.id!,
           namaProduk: p.nama,
@@ -161,10 +186,60 @@ class FirestoreService {
         trx.set(_stokLogRef.doc(), log);
       }
     });
+
+    if (stokLama != null && p.stok != stokLama) {
+      await logActivity(
+        action: 'stok_ubah',
+        category: 'stok',
+        targetId: p.id,
+        targetLabel: p.nama,
+        meta: {
+          'stok_lama': stokLama,
+          'stok_baru': p.stok,
+        },
+        actor: actor,
+      );
+    }
+    if ((hargaLama != null && p.harga != hargaLama) ||
+        (modalLama != null && p.hargaModal != modalLama)) {
+      await logActivity(
+        action: 'harga_ubah',
+        category: 'harga',
+        targetId: p.id,
+        targetLabel: p.nama,
+        meta: {
+          'harga_lama': hargaLama,
+          'harga_baru': p.harga,
+          'harga_modal_lama': modalLama,
+          'harga_modal_baru': p.hargaModal,
+        },
+        actor: actor,
+      );
+    }
+    if (namaLama != null && namaLama != p.nama) {
+      await logActivity(
+        action: 'produk_ubah',
+        category: 'produk',
+        targetId: p.id,
+        targetLabel: p.nama,
+        meta: {
+          'nama_lama': namaLama,
+          'nama_baru': p.nama,
+        },
+        actor: actor,
+      );
+    }
+    await logActivity(
+      action: 'produk_edit',
+      category: 'produk',
+      targetId: p.id,
+      targetLabel: p.nama,
+      actor: actor,
+    );
   }
 
   /// HAPUS PRODUK
-  Future<void> hapusProduk(String id) async {
+  Future<void> hapusProduk(String id, {Map<String, String>? actor}) async {
     final ref = _produkRef.doc(id);
     final snap = await ref.get();
     if (!snap.exists) {
@@ -194,6 +269,19 @@ class FirestoreService {
     batch.set(_stokLogRef.doc(), log);
     batch.delete(ref);
     await batch.commit();
+
+    await logActivity(
+      action: 'produk_hapus',
+      category: 'produk',
+      targetId: id,
+      targetLabel: nama,
+      meta: {
+        'stok': stok,
+        'harga': hargaJual,
+        'harga_modal': hargaModal,
+      },
+      actor: actor,
+    );
   }
 
   /// CARI PRODUK BY BARCODE
@@ -482,6 +570,98 @@ class FirestoreService {
     return _dashboardConfigRef
         .snapshots()
         .map<DateTime?>((snap) => parseReset(snap));
+  }
+
+  Stream<Map<String, dynamic>?> streamRoleAccessConfig() {
+    Future<Map<String, dynamic>?> load() async {
+      final snap = await _roleAccessConfigRef.get();
+      if (!snap.exists) return null;
+      return snap.data() as Map<String, dynamic>?;
+    }
+
+    if (_usePolling) {
+      Future<Map<String, dynamic>?> loadCache() async {
+        final snap = await _roleAccessConfigRef
+            .get(const GetOptions(source: Source.cache));
+        if (!snap.exists) return null;
+        return snap.data() as Map<String, dynamic>?;
+      }
+
+      return _pollWithCache(
+        load: load,
+        loadCache: loadCache,
+        emitNullCache: true,
+      );
+    }
+
+    return _roleAccessConfigRef
+        .snapshots()
+        .map((snap) => snap.data() as Map<String, dynamic>?);
+  }
+
+  Future<void> setRoleAccessConfig(Map<String, dynamic> config) async {
+    await _roleAccessConfigRef.set(config, SetOptions(merge: true));
+  }
+
+  Future<void> logActivity({
+    required String action,
+    required String category,
+    Map<String, dynamic>? meta,
+    String? targetId,
+    String? targetLabel,
+    Map<String, String>? actor,
+  }) async {
+    final payload = <String, dynamic>{
+      'action': action,
+      'category': category,
+      'created_at': Timestamp.now(),
+    };
+    if (meta != null && meta.isNotEmpty) {
+      payload['meta'] = meta;
+    }
+    if (targetId != null && targetId.isNotEmpty) {
+      payload['target_id'] = targetId;
+    }
+    if (targetLabel != null && targetLabel.isNotEmpty) {
+      payload['target_label'] = targetLabel;
+    }
+    if (actor != null) {
+      final uid = actor['uid'];
+      final email = actor['email'];
+      final name = actor['name'];
+      if (uid != null && uid.isNotEmpty) payload['actor_uid'] = uid;
+      if (email != null && email.isNotEmpty) payload['actor_email'] = email;
+      if (name != null && name.isNotEmpty) payload['actor_name'] = name;
+    }
+    await _activityLogRef.add(payload);
+  }
+
+  Stream<List<Map<String, dynamic>>> streamActivityLogs() {
+    if (_usePolling) {
+      return _pollWithCache(
+        load: () async {
+          final snap =
+              await _activityLogRef.orderBy('created_at', descending: true).get();
+          return snap.docs
+              .map((d) => Map<String, dynamic>.from(d.data() as Map))
+              .toList();
+        },
+        loadCache: () async {
+          final snap = await _activityLogRef
+              .orderBy('created_at', descending: true)
+              .get(const GetOptions(source: Source.cache));
+          return snap.docs
+              .map((d) => Map<String, dynamic>.from(d.data() as Map))
+              .toList();
+        },
+      );
+    }
+    return _activityLogRef
+        .orderBy('created_at', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => Map<String, dynamic>.from(d.data() as Map))
+            .toList());
   }
 
   Future<void> setDashboardResetNow() async {
@@ -773,6 +953,7 @@ class FirestoreService {
     required String role,
     String? namaPanggilan,
     bool? disabled,
+    Map<String, dynamic>? accessOverride,
   }) async {
     final payload = <String, dynamic>{
       'email': email,
@@ -784,6 +965,9 @@ class FirestoreService {
     }
     if (disabled != null) {
       payload['disabled'] = disabled;
+    }
+    if (accessOverride != null) {
+      payload['access_override'] = accessOverride;
     }
     await _usersRef.doc(uid).set(payload, SetOptions(merge: true));
   }
@@ -807,6 +991,21 @@ class FirestoreService {
       'nama_panggilan': namaPanggilan.trim(),
       'updatedAt': Timestamp.now(),
     }, SetOptions(merge: true));
+  }
+
+  Future<void> updateUserAccessOverride(
+    String uid,
+    Map<String, dynamic>? override,
+  ) async {
+    final payload = <String, dynamic>{
+      'updatedAt': Timestamp.now(),
+    };
+    if (override == null) {
+      payload['access_override'] = FieldValue.delete();
+    } else {
+      payload['access_override'] = override;
+    }
+    await _usersRef.doc(uid).set(payload, SetOptions(merge: true));
   }
 
   Stream<List<Map<String, dynamic>>> streamUsers() {

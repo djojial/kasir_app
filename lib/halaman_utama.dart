@@ -15,6 +15,7 @@ import 'database/models/produk_model.dart';
 import 'core/theme_controller.dart';
 import 'core/ui/interactive_widgets.dart';
 import 'core/ui/app_feedback.dart';
+import 'core/access/role_access.dart';
 
 LinearGradient _pageGradient(bool isDark) => LinearGradient(
       begin: Alignment.topLeft,
@@ -95,75 +96,60 @@ class _HalamanUtamaState extends State<HalamanUtama> {
   int halamanAktif = 0;
   final firestore = FirestoreService();
   bool _migrasiDiproses = false;
+  List<_NavItem> _cachedNavItems = const [];
 
-  bool get _isOwner => widget.role == 'owner';
-  bool get _isAdmin => widget.role == 'admin';
-  bool get _isOperator => widget.role == 'operator';
+  Map<String, Map<String, bool>> _resolveAccess(
+    Map<String, dynamic>? config,
+    Map<String, dynamic>? profile,
+  ) {
+    final merged = mergeRoleAccessConfig(config);
+    final base = merged[widget.role] ?? kDefaultRoleAccess[widget.role]!;
+    final override = profile?['access_override'];
+    return applyAccessOverride(
+      base,
+      override is Map<String, dynamic> ? override : null,
+    );
+  }
 
-  List<_NavItem> get _navItems {
-    if (_isOwner) {
-      return const [
-        _NavItem(
-          page: _PageKey.dashboard,
-          icon: Icons.space_dashboard_outlined,
-          label: 'Dashboard',
-        ),
-        _NavItem(
-          page: _PageKey.stok,
-          icon: Icons.inventory_2_outlined,
-          label: 'Stok',
-        ),
-        _NavItem(
-          page: _PageKey.laporan,
-          icon: Icons.description_outlined,
-          label: 'Laporan',
-        ),
-      ];
+  List<_NavItem> _navItemsFor(Map<String, Map<String, bool>> access) {
+    final pages = access['pages'] ?? {};
+    final items = <_NavItem>[];
+    if (pages['dashboard'] == true) {
+      items.add(const _NavItem(
+        page: _PageKey.dashboard,
+        icon: Icons.space_dashboard_outlined,
+        label: 'Dashboard',
+      ));
     }
-
-    if (_isAdmin) {
-      return const [
-        _NavItem(
-          page: _PageKey.dashboard,
-          icon: Icons.space_dashboard_outlined,
-          label: 'Dashboard',
-        ),
-        _NavItem(
-          page: _PageKey.pos,
-          icon: Icons.point_of_sale,
-          label: 'Transaksi',
-        ),
-        _NavItem(
-          page: _PageKey.stok,
-          icon: Icons.inventory_2_outlined,
-          label: 'Stok',
-        ),
-        _NavItem(
-          page: _PageKey.laporan,
-          icon: Icons.description_outlined,
-          label: 'Laporan',
-        ),
-        _NavItem(
-          page: _PageKey.users,
-          icon: Icons.manage_accounts_outlined,
-          label: 'Users',
-        ),
-      ];
-    }
-
-    return [
-      const _NavItem(
+    if (pages['transaksi'] == true) {
+      items.add(const _NavItem(
         page: _PageKey.pos,
         icon: Icons.point_of_sale,
         label: 'Transaksi',
-      ),
-      if (_isOperator)
-        const _NavItem(
-          page: _PageKey.stok,
-          icon: Icons.inventory_2_outlined,
-          label: 'Stok',
-        ),
-    ];
+      ));
+    }
+    if (pages['stok'] == true) {
+      items.add(const _NavItem(
+        page: _PageKey.stok,
+        icon: Icons.inventory_2_outlined,
+        label: 'Stok',
+      ));
+    }
+    if (pages['laporan'] == true) {
+      items.add(const _NavItem(
+        page: _PageKey.laporan,
+        icon: Icons.description_outlined,
+        label: 'Laporan',
+      ));
+    }
+    if (pages['users'] == true) {
+      items.add(const _NavItem(
+        page: _PageKey.users,
+        icon: Icons.manage_accounts_outlined,
+        label: 'Users',
+      ));
+    }
+    return items;
   }
 
   final Map<_PageKey, _HeaderInfo> _headerInfo = const {
@@ -189,8 +175,12 @@ class _HalamanUtamaState extends State<HalamanUtama> {
     ),
   };
 
-  Widget _isiHalaman() {
-    final page = _navItems[halamanAktif].page;
+  Widget _isiHalaman(
+    Map<String, Map<String, bool>> access,
+    List<_NavItem> items,
+  ) {
+    final page = items[halamanAktif].page;
+    final features = access['features'] ?? {};
     switch (page) {
       case _PageKey.pos:
         return const HalamanPOS();
@@ -198,14 +188,19 @@ class _HalamanUtamaState extends State<HalamanUtama> {
         return _dashboard();
       case _PageKey.stok:
         return HalamanStok(
-          canAdd: _isAdmin || _isOperator,
-          canEdit: _isAdmin,
-          canDelete: _isAdmin || _isOperator,
+          canAdd: features['stok_tambah'] == true,
+          canEdit: features['stok_edit'] == true,
+          canDelete: features['stok_hapus'] == true,
         );
       case _PageKey.laporan:
         return const HalamanLaporan();
       case _PageKey.users:
-        return const HalamanUser();
+        return HalamanUser(
+          canCreate: features['users_create'] == true,
+          canEdit: features['users_edit'] == true,
+          canDelete: features['users_hapus'] == true,
+          canEditRoleDefaults: widget.role == 'admin',
+        );
     }
   }
 
@@ -231,127 +226,146 @@ class _HalamanUtamaState extends State<HalamanUtama> {
   }
 
   void _openPage(_PageKey key) {
-    final index = _navItems.indexWhere((item) => item.page == key);
+    final index = _cachedNavItems.indexWhere((item) => item.page == key);
     if (index == -1) return;
     setState(() => halamanAktif = index);
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = _navItems;
+    final user = FirebaseAuth.instance.currentUser;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (halamanAktif >= items.length) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() => halamanAktif = 0);
-        }
-      });
-    }
-    final activePage = items[halamanAktif].page;
-    final header = _headerInfo[activePage] ?? _headerInfo[_PageKey.pos]!;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < _mobileBreakpoint;
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: user == null
+          ? const Stream<Map<String, dynamic>?>.empty()
+          : firestore.streamUserProfile(user.uid, email: user.email),
+      builder: (context, profileSnap) {
+        return StreamBuilder<Map<String, dynamic>?>(
+          stream: firestore.streamRoleAccessConfig(),
+          builder: (context, accessSnap) {
+            final access =
+                _resolveAccess(accessSnap.data, profileSnap.data);
+            final items = _navItemsFor(access);
+            _cachedNavItems = items;
+            if (items.isEmpty) {
+              return const Center(child: Text('Akses tidak tersedia.'));
+            }
+            if (halamanAktif >= items.length) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() => halamanAktif = 0);
+                }
+              });
+            }
+            final activePage = items[halamanAktif].page;
+            final header = _headerInfo[activePage] ?? _headerInfo[_PageKey.pos]!;
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < _mobileBreakpoint;
 
-        if (isMobile) {
-          return Scaffold(
-            appBar: AppBar(
-              title: Text(header.title),
-              backgroundColor: _dashSurface(context),
-              foregroundColor: _dashText(context),
-              elevation: 0,
-              actions: [
-                IconButton(
-                  tooltip: 'Tema',
-                  onPressed: () => ThemeController.toggle(context),
-                  icon: Icon(
-                    Theme.of(context).brightness == Brightness.dark
-                        ? Icons.dark_mode
-                        : Icons.light_mode,
-                    color: _dashAccent,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Logout',
-                  onPressed: () async {
-                    await FirebaseAuth.instance.signOut();
-                  },
-                  icon: const Icon(Icons.logout, color: _dashAccent),
-                ),
-              ],
-            ),
-            body: Container(
-              decoration: BoxDecoration(
-                gradient: _pageGradient(isDark),
-              ),
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        header.subtitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _dashMuted(context),
-                          fontWeight: FontWeight.w600,
+                if (isMobile) {
+                  return Scaffold(
+                    appBar: AppBar(
+                      title: Text(header.title),
+                      backgroundColor: _dashSurface(context),
+                      foregroundColor: _dashText(context),
+                      elevation: 0,
+                      actions: [
+                        IconButton(
+                          tooltip: 'Tema',
+                          onPressed: () => ThemeController.toggle(context),
+                          icon: Icon(
+                            Theme.of(context).brightness == Brightness.dark
+                                ? Icons.dark_mode
+                                : Icons.light_mode,
+                            color: _dashAccent,
+                          ),
                         ),
+                        IconButton(
+                          tooltip: 'Logout',
+                          onPressed: () async {
+                            await FirebaseAuth.instance.signOut();
+                          },
+                          icon: const Icon(Icons.logout, color: _dashAccent),
+                        ),
+                      ],
+                    ),
+                    body: Container(
+                      decoration: BoxDecoration(
+                        gradient: _pageGradient(isDark),
+                      ),
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                header.subtitle,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _dashMuted(context),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(child: _isiHalaman(access, items)),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(child: _isiHalaman()),
-                ],
-              ),
-            ),
-            bottomNavigationBar: BottomNavigationBar(
-              currentIndex: halamanAktif,
-              onTap: (index) => setState(() => halamanAktif = index),
-              type: BottomNavigationBarType.fixed,
-              selectedItemColor: _dashAccent,
-              unselectedItemColor: _dashMuted(context),
-              items: [
-                for (final item in items)
-                  BottomNavigationBarItem(
-                    icon: Icon(item.icon),
-                    label: item.label,
-                  ),
-              ],
-            ),
-          );
-        }
+                    bottomNavigationBar: BottomNavigationBar(
+                      currentIndex: halamanAktif,
+                      onTap: (index) => setState(() => halamanAktif = index),
+                      type: BottomNavigationBarType.fixed,
+                      selectedItemColor: _dashAccent,
+                      unselectedItemColor: _dashMuted(context),
+                      items: [
+                        for (final item in items)
+                          BottomNavigationBarItem(
+                            icon: Icon(item.icon),
+                            label: item.label,
+                          ),
+                      ],
+                    ),
+                  );
+                }
 
-        return Scaffold(
-          body: Row(
-            children: [
-              _Sidebar(
-                items: items,
-                selectedIndex: halamanAktif,
-                onSelected: (index) {
-                  setState(() => halamanAktif = index);
-                },
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    _TopBar(
-                      title: header.title,
-                      subtitle: header.subtitle,
-                    ),
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: _pageGradient(isDark),
-                        ),
-                        child: _isiHalaman(),
+                return Scaffold(
+                  body: Row(
+                    children: [
+                      _Sidebar(
+                        items: items,
+                        selectedIndex: halamanAktif,
+                        onSelected: (index) {
+                          setState(() => halamanAktif = index);
+                        },
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            _TopBar(
+                              title: header.title,
+                              subtitle: header.subtitle,
+                            ),
+                            Expanded(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: _pageGradient(isDark),
+                                ),
+                                child: _isiHalaman(access, items),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
         );
       },
     );

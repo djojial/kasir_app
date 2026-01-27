@@ -28,6 +28,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
   final TextEditingController _tanggalC = TextEditingController();
   DateTimeRange? _rentang;
   String _filterAktif = 'all';
+  String _mode = 'stok';
   final FirestoreService _firestore = FirestoreService();
   bool _exporting = false;
 
@@ -39,6 +40,15 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
     _FilterOption(label: 'Restok', value: 'restock'),
     _FilterOption(label: 'Penjualan', value: 'pos'),
     _FilterOption(label: 'Penyesuaian', value: 'edit'),
+  ];
+  static const List<_FilterOption> _filterOpsiAktivitas = [
+    _FilterOption(label: 'Semua', value: 'all'),
+    _FilterOption(label: 'Produk', value: 'produk'),
+    _FilterOption(label: 'Stok', value: 'stok'),
+    _FilterOption(label: 'Transaksi', value: 'transaksi'),
+    _FilterOption(label: 'User', value: 'user'),
+    _FilterOption(label: 'Harga', value: 'harga'),
+    _FilterOption(label: 'Password', value: 'password'),
   ];
 
   @override
@@ -119,21 +129,54 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
           padding: EdgeInsets.all(isNarrow ? 16 : 24),
           child: Column(
             children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Laporan Stok'),
+                    selected: _mode == 'stok',
+                    onSelected: (_) {
+                      setState(() {
+                        _mode = 'stok';
+                        _filterAktif = 'all';
+                      });
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Text('Aktivitas'),
+                    selected: _mode == 'aktivitas',
+                    onSelected: (_) {
+                      setState(() {
+                        _mode = 'aktivitas';
+                        _filterAktif = 'all';
+                      });
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               _FilterBar(
                 tanggalController: _tanggalC,
                 onTanggalTap: _pilihRentangTanggal,
                 filterAktif: _filterAktif,
-                filterOpsi: _filterOpsi,
+                filterOpsi:
+                    _mode == 'stok' ? _filterOpsi : _filterOpsiAktivitas,
                 onFilterChanged: (value) => setState(() => _filterAktif = value),
-                onExport: _exportPdf,
+                onExport: _mode == 'stok' ? _exportPdf : null,
                 exporting: _exporting,
               ),
               const SizedBox(height: 16),
               Expanded(
-                child: _RingkasanTab(
-                  rentang: _rentang,
-                  filterAktif: _filterAktif,
-                ),
+                child: _mode == 'stok'
+                    ? _RingkasanTab(
+                        rentang: _rentang,
+                        filterAktif: _filterAktif,
+                      )
+                    : _ActivityTab(
+                        rentang: _rentang,
+                        filterAktif: _filterAktif,
+                      ),
               ),
             ],
           ),
@@ -532,7 +575,7 @@ class _FilterBar extends StatelessWidget {
   final String filterAktif;
   final List<_FilterOption> filterOpsi;
   final ValueChanged<String> onFilterChanged;
-  final VoidCallback onExport;
+  final VoidCallback? onExport;
   final bool exporting;
 
   const _FilterBar({
@@ -582,24 +625,26 @@ class _FilterBar extends StatelessWidget {
           options: filterOpsi,
           onChanged: onFilterChanged,
         );
-        final exportButton = SizedBox(
-          width: isNarrow ? double.infinity : null,
-          child: HoverButton(
-            enabled: !exporting,
-            child: OutlinedButton.icon(
-              onPressed: exporting ? null : onExport,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.primary,
-                side: BorderSide(color: Theme.of(context).dividerColor),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+        final exportButton = onExport == null
+            ? const SizedBox.shrink()
+            : SizedBox(
+                width: isNarrow ? double.infinity : null,
+                child: HoverButton(
+                  enabled: !exporting,
+                  child: OutlinedButton.icon(
+                    onPressed: exporting ? null : onExport,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                      side: BorderSide(color: Theme.of(context).dividerColor),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.file_download_outlined),
+                    label: Text(exporting ? 'Menyiapkan...' : 'Export'),
+                  ),
                 ),
-              ),
-              icon: const Icon(Icons.file_download_outlined),
-              label: Text(exporting ? 'Menyiapkan...' : 'Export'),
-            ),
-          ),
-        );
+              );
 
         return HoverCard(
           child: Container(
@@ -968,6 +1013,235 @@ class _RingkasanTab extends StatelessWidget {
             },
           );
           },
+        );
+      },
+    );
+  }
+}
+
+class _ActivityTab extends StatelessWidget {
+  final DateTimeRange? rentang;
+  final String filterAktif;
+  final FirestoreService firestore = FirestoreService();
+
+  _ActivityTab({
+    required this.rentang,
+    required this.filterAktif,
+  });
+
+  bool _logDalamRentang(Map<String, dynamic> log) {
+    if (rentang == null) return true;
+    final ts = log['created_at'];
+    if (ts is! Timestamp) return false;
+    final dt = ts.toDate();
+    final start = DateTime(
+      rentang!.start.year,
+      rentang!.start.month,
+      rentang!.start.day,
+    );
+    final end = DateTime(
+      rentang!.end.year,
+      rentang!.end.month,
+      rentang!.end.day,
+      23,
+      59,
+      59,
+    );
+    return !dt.isBefore(start) && !dt.isAfter(end);
+  }
+
+  bool _logSesuaiFilter(Map<String, dynamic> log) {
+    if (!_logDalamRentang(log)) return false;
+    if (filterAktif == 'all') return true;
+    final category = (log['category'] ?? '').toString().toLowerCase();
+    return category == filterAktif;
+  }
+
+  String _formatDateTime(Timestamp? ts) {
+    if (ts == null) return '-';
+    final dt = ts.toDate();
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = dt.month.toString().padLeft(2, '0');
+    final year = dt.year.toString();
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year $hour:$minute';
+  }
+
+  String _labelAksi(String value) {
+    switch (value) {
+      case 'produk_tambah':
+        return 'Tambah produk';
+      case 'produk_hapus':
+        return 'Hapus produk';
+      case 'produk_ubah':
+        return 'Ubah produk';
+      case 'stok_ubah':
+        return 'Ubah stok';
+      case 'harga_ubah':
+        return 'Ubah harga';
+      case 'transaksi':
+        return 'Transaksi';
+      case 'user_create':
+        return 'Buat user';
+      case 'user_update_role':
+        return 'Ubah role user';
+      case 'user_update_email':
+        return 'Ubah email user';
+      case 'user_update_nickname':
+        return 'Ubah nama user';
+      case 'user_delete':
+        return 'Hapus user';
+      case 'user_disable':
+        return 'Nonaktifkan user';
+      case 'user_enable':
+        return 'Aktifkan user';
+      case 'reset_password':
+        return 'Reset password';
+      case 'role_default_update':
+        return 'Ubah default role';
+      case 'user_access_override':
+        return 'Akses khusus user';
+      default:
+        return value.isEmpty ? '-' : value;
+    }
+  }
+
+  String _buildDetail(Map<String, dynamic> log) {
+    final parts = <String>[];
+    final target = (log['target_label'] ?? '').toString().trim();
+    if (target.isNotEmpty) {
+      parts.add(target);
+    }
+    final meta = log['meta'];
+    if (meta is Map) {
+      if (meta['total'] != null) {
+        parts.add('Total: Rp ${meta['total']}');
+      }
+      if (meta['items'] != null) {
+        parts.add('Item: ${meta['items']}');
+      }
+      if (meta['stok_lama'] != null && meta['stok_baru'] != null) {
+        parts.add('Stok ${meta['stok_lama']} → ${meta['stok_baru']}');
+      }
+      if (meta['harga_lama'] != null && meta['harga_baru'] != null) {
+        parts.add('Harga ${meta['harga_lama']} → ${meta['harga_baru']}');
+      }
+      if (meta['role_baru'] != null) {
+        parts.add('Role: ${meta['role_baru']}');
+      }
+      if (meta['email_baru'] != null) {
+        parts.add('Email: ${meta['email_baru']}');
+      }
+    }
+    return parts.isEmpty ? '-' : parts.join(' · ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: firestore.streamActivityLogs(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final logs = snap.data!.where(_logSesuaiFilter).toList();
+        return HoverCard(
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: _panelDecoration(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Log Aktivitas',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${logs.length} aktivitas',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: logs.isEmpty
+                      ? const Center(child: Text('Belum ada aktivitas'))
+                      : ListView.separated(
+                          itemCount: logs.length,
+                          separatorBuilder: (_, __) =>
+                              const Divider(height: 16),
+                          itemBuilder: (context, index) {
+                            final log = logs[index];
+                            final action =
+                                _labelAksi((log['action'] ?? '').toString());
+                            final actorName =
+                                (log['actor_name'] ??
+                                        log['actor_email'] ??
+                                        '-')
+                                    .toString();
+                            final time = _formatDateTime(
+                              log['created_at'] as Timestamp?,
+                            );
+                            final detail = _buildDetail(log);
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  action,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  detail,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.65),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '$actorName • $time',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.5),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -1621,4 +1895,13 @@ List<BoxShadow> _luxShadow(BuildContext context) {
       offset: const Offset(0, 10),
     ),
   ];
+}
+
+BoxDecoration _panelDecoration(BuildContext context) {
+  return BoxDecoration(
+    color: Theme.of(context).colorScheme.surface,
+    borderRadius: BorderRadius.circular(16),
+    border: Border.all(color: Theme.of(context).dividerColor),
+    boxShadow: _luxShadow(context),
+  );
 }

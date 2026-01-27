@@ -8,8 +8,13 @@ import '../../database/models/produk_model.dart';
 import '../../database/services/firestore_service.dart';
 class HalamanScanBarcode extends StatefulWidget {
   final VoidCallback? onBackToDashboard;
+  final ValueChanged<Produk>? onAddToCart;
 
-  const HalamanScanBarcode({super.key, this.onBackToDashboard});
+  const HalamanScanBarcode({
+    super.key,
+    this.onBackToDashboard,
+    this.onAddToCart,
+  });
 
   @override
   State<HalamanScanBarcode> createState() => _HalamanScanBarcodeState();
@@ -191,8 +196,11 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
               ],
             ),
           );
-          final hasilCard =
-              _HasilScanCard(produk: produk, hasilScan: hasilScan);
+          final hasilCard = _HasilScanCard(
+            produk: produk,
+            hasilScan: hasilScan,
+            onAddToCart: widget.onAddToCart,
+          );
 
           return Padding(
             padding: const EdgeInsets.all(24),
@@ -221,8 +229,13 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
 class _HasilScanCard extends StatelessWidget {
   final Produk? produk;
   final String? hasilScan;
+  final ValueChanged<Produk>? onAddToCart;
 
-  const _HasilScanCard({required this.produk, required this.hasilScan});
+  const _HasilScanCard({
+    required this.produk,
+    required this.hasilScan,
+    this.onAddToCart,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -253,49 +266,55 @@ class _HasilScanCard extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Hasil Scan', style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text(
+                  'Hasil Scan',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 12),
-                Text(
-                  produk!.nama,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Theme.of(context).colorScheme.onSurface,
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          produk!.nama,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Harga: Rp ${produk!.harga}',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Stok: ${produk!.stok}',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Harga: Rp ${produk!.harga}',
-                  style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.6),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Stok: ${produk!.stok}',
-                  style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.6),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  children: const [
-                    Chip(label: Text('Offline')),
-                    Chip(label: Text('Tokopedia')),
-                  ],
-                ),
-                const Spacer(),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () {},
+                    onPressed: onAddToCart == null
+                        ? null
+                        : () => onAddToCart!(produk!),
                     icon: const Icon(Icons.add_shopping_cart),
                     label: const Text('Tambah ke keranjang (POS)'),
                   ),
