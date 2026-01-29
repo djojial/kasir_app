@@ -272,6 +272,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
           sumber: "POS",
           refId: transaksi.id,
           hargaJualOverride: unitPrice,
+          actor: actor,
         );
       }
 

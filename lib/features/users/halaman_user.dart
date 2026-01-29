@@ -835,34 +835,85 @@ class _HalamanUserState extends State<HalamanUser> {
           title: Text('Default Role: ${_roleLabel(_role)}'),
           content: StatefulBuilder(
             builder: (context, setDialogState) {
-              return SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildAccessSection(
-                      title: 'Halaman',
-                      labels: _pageLabels,
-                      values: draft['pages'] ?? {},
-                      editable: true,
-                      onToggle: (key, value) {
-                        setDialogState(() {
-                          draft['pages']![key] = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    _buildAccessSection(
-                      title: 'Fitur',
-                      labels: _featureLabels,
-                      values: draft['features'] ?? {},
-                      editable: true,
-                      onToggle: (key, value) {
-                        setDialogState(() {
-                          draft['features']![key] = value;
-                        });
-                      },
-                    ),
-                  ],
+              return ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Builder(
+                        builder: (context) {
+                          final isWide =
+                              MediaQuery.of(context).size.width >= 900;
+                          final roleColor = _roleColor(_role);
+                          final panelDecoration = BoxDecoration(
+                            color: roleColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: _luxShadow(context),
+                            border: Border.all(
+                              color:
+                                  Theme.of(context).dividerColor.withValues(
+                                        alpha: 0.6,
+                                      ),
+                            ),
+                          );
+                          Widget panel(Widget child) => Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: panelDecoration,
+                                child: child,
+                              );
+
+                          final pageSection = _buildAccessSection(
+                            title: 'Halaman',
+                            labels: _pageLabels,
+                            values: draft['pages'] ?? {},
+                            editable: true,
+                            accentColor: roleColor,
+                            useGrid: false,
+                            badgeColor: roleColor,
+                            onToggle: (key, value) {
+                              setDialogState(() {
+                                draft['pages']![key] = value;
+                              });
+                            },
+                          );
+                          final featureSection = _buildAccessSection(
+                            title: 'Fitur',
+                            labels: _featureLabels,
+                            values: draft['features'] ?? {},
+                            editable: true,
+                            accentColor: roleColor,
+                            useGrid: false,
+                            badgeColor: roleColor,
+                            onToggle: (key, value) {
+                              setDialogState(() {
+                                draft['features']![key] = value;
+                              });
+                            },
+                          );
+
+                          if (!isWide) {
+                            return Column(
+                              children: [
+                                panel(pageSection),
+                                const SizedBox(height: 12),
+                                panel(featureSection),
+                              ],
+                            );
+                          }
+
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: panel(pageSection)),
+                              const SizedBox(width: 12),
+                              Expanded(child: panel(featureSection)),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -909,8 +960,10 @@ class _HalamanUserState extends State<HalamanUser> {
           title: const Text('Akses Khusus'),
           content: StatefulBuilder(
             builder: (context, setDialogState) {
-              return SingleChildScrollView(
-                child: Column(
+              return ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: SingleChildScrollView(
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
@@ -929,32 +982,41 @@ class _HalamanUserState extends State<HalamanUser> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    _buildAccessSection(
-                      title: 'Halaman',
-                      labels: _pageLabels,
-                      values: draft['pages'] ?? {},
-                      editable: customEnabled,
-                      accentColor: _roleColor(role),
-                      onToggle: (key, value) {
-                        setDialogState(() {
-                          draft['pages']![key] = value;
-                        });
-                      },
+                    SizedBox(
+                      width: double.maxFinite,
+                      child: _buildAccessSection(
+                        title: 'Halaman',
+                        labels: _pageLabels,
+                        values: draft['pages'] ?? {},
+                        editable: customEnabled,
+                        accentColor: _roleColor(role),
+                        useGrid: false,
+                        onToggle: (key, value) {
+                          setDialogState(() {
+                            draft['pages']![key] = value;
+                          });
+                        },
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    _buildAccessSection(
-                      title: 'Fitur',
-                      labels: _featureLabels,
-                      values: draft['features'] ?? {},
-                      editable: customEnabled,
-                      accentColor: _roleColor(role),
-                      onToggle: (key, value) {
-                        setDialogState(() {
-                          draft['features']![key] = value;
-                        });
-                      },
+                    SizedBox(
+                      width: double.maxFinite,
+                      child: _buildAccessSection(
+                        title: 'Fitur',
+                        labels: _featureLabels,
+                        values: draft['features'] ?? {},
+                        editable: customEnabled,
+                        accentColor: _roleColor(role),
+                        useGrid: false,
+                        onToggle: (key, value) {
+                          setDialogState(() {
+                            draft['features']![key] = value;
+                          });
+                        },
+                      ),
                     ),
                   ],
+                ),
                 ),
               );
             },
@@ -1407,7 +1469,7 @@ class _HalamanUserState extends State<HalamanUser> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Akses khusus akun (override)',
+                  'Akses Khusus',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -1420,47 +1482,98 @@ class _HalamanUserState extends State<HalamanUser> {
               ],
             ),
             const SizedBox(height: 4),
-            Text(
-              _customAccessEnabled
-                  ? 'Override hanya untuk akun yang dibuat ini.'
-                  : 'Jika OFF, akun mengikuti Default Role.',
-              style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.55),
-              ),
-            ),
+                Text(
+                  _customAccessEnabled
+                      ? 'Hanya berlaku untuk akun yang dibuat ini.'
+                      : 'Jika OFF, akun mengikuti Default Role.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.55),
+                  ),
+                ),
             if (_customAccessEnabled) ...[
               const SizedBox(height: 8),
-              _buildAccessSection(
-                title: 'Halaman (Akses Khusus)',
-                labels: _pageLabels,
-                values: _customAccessDraft?['pages'] ?? const {},
-                editable: true,
-                accentColor: _roleColor(_role),
-                onToggle: (key, value) {
-                  setState(() {
-                    _customAccessDraft ??=
-                        _cloneAccess(kDefaultRoleAccess[_role]!);
-                    _customAccessDraft?['pages']?[key] = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 10),
-              _buildAccessSection(
-                title: 'Fitur (Akses Khusus)',
-                labels: _featureLabels,
-                values: _customAccessDraft?['features'] ?? const {},
-                editable: true,
-                accentColor: _roleColor(_role),
-                onToggle: (key, value) {
-                  setState(() {
-                    _customAccessDraft ??=
-                        _cloneAccess(kDefaultRoleAccess[_role]!);
-                    _customAccessDraft?['features']?[key] = value;
-                  });
+              const SizedBox(height: 6),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth >= 560;
+                  final roleColor = _roleColor(_role);
+                  final panelDecoration = BoxDecoration(
+                    color: roleColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).dividerColor,
+                    ),
+                    boxShadow: _luxShadow(context),
+                  );
+                  Widget panel(Widget child) => Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: panelDecoration,
+                        child: child,
+                      );
+                  final pageSection = _buildAccessSection(
+                    title: 'Akses Halaman',
+                    labels: _pageLabels,
+                    values: _customAccessDraft?['pages'] ?? const {},
+                    editable: true,
+                    accentColor: _roleColor(_role),
+                    icon: Icons.view_module_outlined,
+                    onToggle: (key, value) {
+                      setState(() {
+                        _customAccessDraft ??=
+                            _cloneAccess(kDefaultRoleAccess[_role]!);
+                        _customAccessDraft?['pages']?[key] = value;
+                      });
+                    },
+                  );
+                  final featureSection = _buildAccessSection(
+                    title: 'Akses Fitur',
+                    labels: _featureLabels,
+                    values: _customAccessDraft?['features'] ?? const {},
+                    editable: true,
+                    accentColor: _roleColor(_role),
+                    icon: Icons.extension_outlined,
+                    onToggle: (key, value) {
+                      setState(() {
+                        _customAccessDraft ??=
+                            _cloneAccess(kDefaultRoleAccess[_role]!);
+                        _customAccessDraft?['features']?[key] = value;
+                      });
+                    },
+                  );
+
+                  if (!isWide) {
+                    return Column(
+                      children: [
+                        panel(pageSection),
+                        const SizedBox(height: 10),
+                        panel(featureSection),
+                      ],
+                    );
+                  }
+
+                  return Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(),
+                      1: FlexColumnWidth(),
+                    },
+                    defaultVerticalAlignment:
+                        TableCellVerticalAlignment.top,
+                    children: [
+                      TableRow(
+                        children: [
+                          panel(pageSection),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 12),
+                            child: panel(featureSection),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
                 },
               ),
             ],
@@ -1494,47 +1607,165 @@ class _HalamanUserState extends State<HalamanUser> {
     required bool editable,
     required void Function(String key, bool value) onToggle,
     Color? accentColor,
+    IconData? icon,
+    bool useGrid = true,
+    Color? badgeColor,
   }) {
-    final textColor = Theme.of(context).colorScheme.onSurface;
-    final chipColor = accentColor ?? Theme.of(context).colorScheme.primary;
+    final colorScheme = Theme.of(context).colorScheme;
+    final textColor = colorScheme.onSurface;
+    final chipColor = accentColor ?? colorScheme.primary;
+    final chipBorder = colorScheme.outline.withValues(alpha: 0.85);
+    final badgeAccent = badgeColor ?? chipColor;
+    final selectedCount =
+        values.values.where((value) => value == true).length;
+    final totalCount = labels.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: textColor.withValues(alpha: 0.7),
+        SizedBox(
+          width: double.infinity,
+          height: 28,
+          child: Stack(
+            alignment: Alignment.centerLeft,
+            children: [
+              Row(
+                children: [
+                  if (icon != null)
+                    Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: chipColor.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        icon,
+                        size: 16,
+                        color: chipColor,
+                      ),
+                    ),
+                  if (icon != null) const SizedBox(width: 8),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: textColor.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+              Positioned(
+                right: 0,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: badgeAccent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: badgeAccent.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Text(
+                    '$selectedCount/$totalCount aktif',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: labels.entries.map((entry) {
-            final key = entry.key;
-            final selected = values[key] == true;
-            return FilterChip(
-              label: Text(entry.value),
-              selected: selected,
-              onSelected: editable
-                  ? (value) => onToggle(key, value)
-                  : null,
-              selectedColor: chipColor.withValues(alpha: 0.2),
-              checkmarkColor: chipColor,
-              labelStyle: TextStyle(
-                color: selected
-                    ? chipColor
-                    : textColor.withValues(alpha: 0.8),
-                fontWeight: FontWeight.w600,
-              ),
-              side: BorderSide(
-                color: selected ? chipColor : Theme.of(context).dividerColor,
-              ),
-            );
-          }).toList(),
-        ),
+        const SizedBox(height: 10),
+        if (useGrid)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const spacing = 8.0;
+              final hasBoundedWidth =
+                  constraints.hasBoundedWidth && constraints.maxWidth.isFinite;
+              final availableWidth =
+                  hasBoundedWidth ? constraints.maxWidth : 0.0;
+              final twoColumns = hasBoundedWidth && availableWidth >= 360;
+              final chipWidth =
+                  twoColumns ? (availableWidth - spacing) / 2 : null;
+              return Wrap(
+                spacing: spacing,
+                runSpacing: 8,
+                children: labels.entries.map((entry) {
+                  final key = entry.key;
+                  final selected = values[key] == true;
+                  return SizedBox(
+                    width: chipWidth,
+                    child: FilterChip(
+                      label: Text(entry.value),
+                      selected: selected,
+                      onSelected: editable
+                          ? (value) => onToggle(key, value)
+                          : null,
+                      showCheckmark: true,
+                      backgroundColor: Colors.white,
+                      selectedColor: chipColor.withValues(alpha: 0.95),
+                      checkmarkColor: Colors.white,
+                      labelStyle: TextStyle(
+                        color: selected ? Colors.white : textColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      side: BorderSide(
+                        color: selected
+                            ? chipColor.withValues(alpha: 0.95)
+                            : chipBorder,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      materialTapTargetSize:
+                          MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      shape: const StadiumBorder(),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: labels.entries.map((entry) {
+              final key = entry.key;
+              final selected = values[key] == true;
+              return FilterChip(
+                label: Text(entry.value),
+                selected: selected,
+                onSelected:
+                    editable ? (value) => onToggle(key, value) : null,
+                showCheckmark: true,
+                backgroundColor: Colors.white,
+                selectedColor: chipColor.withValues(alpha: 0.95),
+                checkmarkColor: Colors.white,
+                labelStyle: TextStyle(
+                  color: selected ? Colors.white : textColor,
+                  fontWeight: FontWeight.w600,
+                ),
+                side: BorderSide(
+                  color: selected
+                      ? chipColor.withValues(alpha: 0.95)
+                      : chipBorder,
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                shape: const StadiumBorder(),
+              );
+            }).toList(),
+          ),
       ],
     );
   }

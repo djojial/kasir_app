@@ -15,6 +15,16 @@ class FirestoreService {
   CollectionReference get _transaksiItemRef => _db.collection('transaksi_items');
   CollectionReference get _stokLogRef => _db.collection('stok_log');
   CollectionReference get _activityLogRef => _db.collection('activity_logs');
+
+  void _attachActor(Map<String, dynamic> log, Map<String, String>? actor) {
+    if (actor == null) return;
+    final uid = actor['uid'];
+    final email = actor['email'];
+    final name = actor['name'];
+    if (uid != null && uid.isNotEmpty) log['actor_uid'] = uid;
+    if (email != null && email.isNotEmpty) log['actor_email'] = email;
+    if (name != null && name.isNotEmpty) log['actor_name'] = name;
+  }
   CollectionReference get _usersRef => _db.collection('users');
   DocumentReference get _dashboardConfigRef =>
       _db.collection('app_config').doc('dashboard');
@@ -69,6 +79,8 @@ class FirestoreService {
     log['sumber'] = 'INIT';
     log['harga_modal'] = p.hargaModal;
     log['harga_jual'] = p.harga;
+    log['log_type'] = 'stok';
+    _attachActor(log, actor);
 
     await _stokLogRef.add(log);
 
@@ -166,6 +178,8 @@ class FirestoreService {
         log['sumber'] = 'EDIT';
         log['harga_modal'] = p.hargaModal;
         log['harga_jual'] = p.harga;
+        log['log_type'] = 'stok';
+        _attachActor(log, actor);
         trx.set(_stokLogRef.doc(), log);
       }
 
@@ -182,7 +196,9 @@ class FirestoreService {
           'harga_jual': p.harga,
           'harga_modal_lama': modalLama,
           'harga_jual_lama': hargaLama,
+          'log_type': 'stok',
         };
+        _attachActor(log, actor);
         trx.set(_stokLogRef.doc(), log);
       }
     });
@@ -264,6 +280,8 @@ class FirestoreService {
     log['harga_modal'] = hargaModal;
     log['harga_jual'] = hargaJual;
     log['catatan'] = 'hapus produk';
+    log['log_type'] = 'stok';
+    _attachActor(log, actor);
 
     final batch = _db.batch();
     batch.set(_stokLogRef.doc(), log);
@@ -312,7 +330,11 @@ class FirestoreService {
   }
 
   /// TAMBAH STOK + LOG
-  Future<void> tambahStokProduk(Produk produk, int jumlah) async {
+  Future<void> tambahStokProduk(
+    Produk produk,
+    int jumlah, {
+    Map<String, String>? actor,
+  }) async {
     final ref = _produkRef.doc(produk.id);
 
     await _db.runTransaction((trx) async {
@@ -334,6 +356,8 @@ class FirestoreService {
       log['sumber'] = 'RESTOCK';
       log['harga_modal'] = produk.hargaModal;
       log['harga_jual'] = produk.harga;
+      log['log_type'] = 'stok';
+      _attachActor(log, actor);
 
       trx.set(_stokLogRef.doc(), log);
     });
@@ -346,6 +370,7 @@ class FirestoreService {
     String sumber = 'POS',
     String? refId,
     int? hargaJualOverride,
+    Map<String, String>? actor,
   }) async {
     final ref = _produkRef.doc(produk.id);
 
@@ -373,6 +398,8 @@ class FirestoreService {
       }
       log['harga_modal'] = produk.hargaModal;
       log['harga_jual'] = hargaJualOverride ?? produk.harga;
+      log['log_type'] = 'stok';
+      _attachActor(log, actor);
 
       await _stokLogRef.add(log);
       return;
@@ -400,6 +427,8 @@ class FirestoreService {
       }
       log['harga_modal'] = produk.hargaModal;
       log['harga_jual'] = hargaJualOverride ?? produk.harga;
+      log['log_type'] = 'stok';
+      _attachActor(log, actor);
 
       trx.set(_stokLogRef.doc(), log);
     });
@@ -615,6 +644,8 @@ class FirestoreService {
       'action': action,
       'category': category,
       'created_at': Timestamp.now(),
+      'waktu': Timestamp.now(),
+      'log_type': 'activity',
     };
     if (meta != null && meta.isNotEmpty) {
       payload['meta'] = meta;
@@ -625,30 +656,26 @@ class FirestoreService {
     if (targetLabel != null && targetLabel.isNotEmpty) {
       payload['target_label'] = targetLabel;
     }
-    if (actor != null) {
-      final uid = actor['uid'];
-      final email = actor['email'];
-      final name = actor['name'];
-      if (uid != null && uid.isNotEmpty) payload['actor_uid'] = uid;
-      if (email != null && email.isNotEmpty) payload['actor_email'] = email;
-      if (name != null && name.isNotEmpty) payload['actor_name'] = name;
-    }
-    await _activityLogRef.add(payload);
+    _attachActor(payload, actor);
+    await _stokLogRef.add(payload);
   }
 
   Stream<List<Map<String, dynamic>>> streamActivityLogs() {
     if (_usePolling) {
       return _pollWithCache(
         load: () async {
-          final snap =
-              await _activityLogRef.orderBy('created_at', descending: true).get();
+          final snap = await _stokLogRef
+              .where('log_type', isEqualTo: 'activity')
+              .orderBy('waktu', descending: true)
+              .get();
           return snap.docs
               .map((d) => Map<String, dynamic>.from(d.data() as Map))
               .toList();
         },
         loadCache: () async {
-          final snap = await _activityLogRef
-              .orderBy('created_at', descending: true)
+          final snap = await _stokLogRef
+              .where('log_type', isEqualTo: 'activity')
+              .orderBy('waktu', descending: true)
               .get(const GetOptions(source: Source.cache));
           return snap.docs
               .map((d) => Map<String, dynamic>.from(d.data() as Map))
@@ -656,8 +683,9 @@ class FirestoreService {
         },
       );
     }
-    return _activityLogRef
-        .orderBy('created_at', descending: true)
+    return _stokLogRef
+        .where('log_type', isEqualTo: 'activity')
+        .orderBy('waktu', descending: true)
         .snapshots()
         .map((snap) => snap.docs
             .map((d) => Map<String, dynamic>.from(d.data() as Map))
@@ -793,28 +821,37 @@ class FirestoreService {
   }
 
   Stream<List<Map<String, dynamic>>> streamStokLog() {
+    List<Map<String, dynamic>> filterStok(List<Map<String, dynamic>> items) {
+      return items
+          .where((d) => (d['log_type'] ?? 'stok') != 'activity')
+          .toList();
+    }
     if (_usePolling) {
       return _pollWithCache(
         load: () async {
           final snap = await _stokLogRef.orderBy('waktu', descending: true).get();
-          return snap.docs
+          final list = snap.docs
               .map((d) => Map<String, dynamic>.from(d.data() as Map))
               .toList();
+          return filterStok(list);
         },
         loadCache: () async {
           final snap = await _stokLogRef
               .orderBy('waktu', descending: true)
               .get(const GetOptions(source: Source.cache));
-          return snap.docs
+          final list = snap.docs
               .map((d) => Map<String, dynamic>.from(d.data() as Map))
               .toList();
+          return filterStok(list);
         },
       );
     }
     return _stokLogRef.orderBy('waktu', descending: true).snapshots().map(
-          (snap) => snap.docs
-              .map((d) => Map<String, dynamic>.from(d.data() as Map))
-              .toList(),
+          (snap) => filterStok(
+            snap.docs
+                .map((d) => Map<String, dynamic>.from(d.data() as Map))
+                .toList(),
+          ),
         );
   }
 

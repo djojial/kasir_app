@@ -27,8 +27,7 @@ class HalamanLaporan extends StatefulWidget {
 class _HalamanLaporanState extends State<HalamanLaporan> {
   final TextEditingController _tanggalC = TextEditingController();
   DateTimeRange? _rentang;
-  String _filterAktif = 'all';
-  String _mode = 'stok';
+  String _filterAktifStok = 'all';
   final FirestoreService _firestore = FirestoreService();
   bool _exporting = false;
 
@@ -129,54 +128,29 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
           padding: EdgeInsets.all(isNarrow ? 16 : 24),
           child: Column(
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ChoiceChip(
-                    label: const Text('Laporan Stok'),
-                    selected: _mode == 'stok',
-                    onSelected: (_) {
-                      setState(() {
-                        _mode = 'stok';
-                        _filterAktif = 'all';
-                      });
-                    },
-                  ),
-                  ChoiceChip(
-                    label: const Text('Aktivitas'),
-                    selected: _mode == 'aktivitas',
-                    onSelected: (_) {
-                      setState(() {
-                        _mode = 'aktivitas';
-                        _filterAktif = 'all';
-                      });
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
               _FilterBar(
                 tanggalController: _tanggalC,
                 onTanggalTap: _pilihRentangTanggal,
-                filterAktif: _filterAktif,
-                filterOpsi:
-                    _mode == 'stok' ? _filterOpsi : _filterOpsiAktivitas,
-                onFilterChanged: (value) => setState(() => _filterAktif = value),
-                onExport: _mode == 'stok' ? _exportPdf : null,
+                filterAktif: _filterAktifStok,
+                filterOpsi: _filterOpsi,
+                onFilterChanged: (value) =>
+                    setState(() => _filterAktifStok = value),
+                onExport: _exportPdf,
                 exporting: _exporting,
               ),
               const SizedBox(height: 16),
               Expanded(
-                child: _mode == 'stok'
-                    ? _RingkasanTab(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      _RingkasanTab(
                         rentang: _rentang,
-                        filterAktif: _filterAktif,
-                      )
-                    : _ActivityTab(
-                        rentang: _rentang,
-                        filterAktif: _filterAktif,
+                        filterAktif: _filterAktifStok,
+                        wrapInScroll: false,
                       ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -221,7 +195,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       final rangeLabel =
           _rentang == null ? 'Semua tanggal' : _formatTanggalRange(_rentang!);
       final filterLabel = _filterOpsi
-          .firstWhere((o) => o.value == _filterAktif,
+          .firstWhere((o) => o.value == _filterAktifStok,
               orElse: () => const _FilterOption(label: 'Semua', value: 'all'))
           .label;
 
@@ -263,8 +237,8 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         final nama = (namaProduk ?? info?.nama ?? 'Produk').toString();
         final perubahan = (log['perubahan'] ?? 0) as int;
         final stokAkhir = (log['stok_akhir'] ?? 0) as int;
-        final sumber = (log['sumber'] ?? '').toString().toLowerCase();
-        final tipe = (log['tipe'] ?? '').toString().toLowerCase();
+                      final sumber = (log['sumber'] ?? '').toString().toLowerCase();
+                      final tipe = (log['tipe'] ?? '').toString().toLowerCase();
         final invoiceRaw = log['refId'] ?? log['transaksiId'];
         final invoice = sumber == 'pos' && invoiceRaw != null
             ? invoiceRaw.toString()
@@ -489,14 +463,15 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
 
   bool _logSesuaiFilter(Map<String, dynamic> log) {
     if (!_logDalamRentang(log)) return false;
-    if (_filterAktif != 'all') {
+    if (_filterAktifStok != 'all') {
       final sumber = (log['sumber'] ?? '').toString().toLowerCase();
       final tipe = (log['tipe'] ?? '').toString().toLowerCase();
-      final isTipe = _filterAktif == 'masuk' || _filterAktif == 'keluar';
+      final isTipe =
+          _filterAktifStok == 'masuk' || _filterAktifStok == 'keluar';
       if (isTipe) {
-        if (tipe != _filterAktif) return false;
+        if (tipe != _filterAktifStok) return false;
       } else {
-        if (sumber != _filterAktif) return false;
+        if (sumber != _filterAktifStok) return false;
       }
     }
     return true;
@@ -567,6 +542,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         return '-';
     }
   }
+
 }
 
 class _FilterBar extends StatelessWidget {
@@ -832,16 +808,39 @@ class _FilterOption {
 class _RingkasanTab extends StatelessWidget {
   final DateTimeRange? rentang;
   final String filterAktif;
+  final bool wrapInScroll;
   final FirestoreService firestore = FirestoreService();
 
   _RingkasanTab({
     required this.rentang,
     required this.filterAktif,
+    this.wrapInScroll = true,
   });
 
   bool _logDalamRentang(Map<String, dynamic> log) {
     if (rentang == null) return true;
     final ts = log['waktu'];
+    if (ts is! Timestamp) return false;
+    final dt = ts.toDate();
+    final start = DateTime(
+      rentang!.start.year,
+      rentang!.start.month,
+      rentang!.start.day,
+    );
+    final end = DateTime(
+      rentang!.end.year,
+      rentang!.end.month,
+      rentang!.end.day,
+      23,
+      59,
+      59,
+    );
+    return !dt.isBefore(start) && !dt.isAfter(end);
+  }
+
+  bool _activityDalamRentang(Map<String, dynamic> log) {
+    if (rentang == null) return true;
+    final ts = log['created_at'];
     if (ts is! Timestamp) return false;
     final dt = ts.toDate();
     final start = DateTime(
@@ -977,39 +976,45 @@ class _RingkasanTab extends StatelessWidget {
                 ),
               ];
 
-              return SingleChildScrollView(
-                child: Column(
-                  children: [
-                    if (isNarrow)
-                      Wrap(
-                        spacing: gap,
-                        runSpacing: gap,
-                        children: [
-                          for (final card in cards)
-                            SizedBox(width: cardWidth, child: card),
-                        ],
-                      )
-                    else
-                      Row(
-                        children: [
-                          Expanded(child: cards[0]),
-                          const SizedBox(width: 16),
-                          Expanded(child: cards[1]),
-                          const SizedBox(width: 16),
-                          Expanded(child: cards[2]),
-                          const SizedBox(width: 16),
-                          Expanded(child: cards[3]),
-                        ],
-                      ),
-                    const SizedBox(height: 16),
-                    _ChartCard(
-                      title: 'Detail Log Stok',
-                      tag: tagLabel,
-                      child: _LogTable(logs: logs, produkMap: produkMap),
+              final content = Column(
+                children: [
+                  if (isNarrow)
+                    Wrap(
+                      spacing: gap,
+                      runSpacing: gap,
+                      children: [
+                        for (final card in cards)
+                          SizedBox(width: cardWidth, child: card),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(child: cards[0]),
+                        const SizedBox(width: 16),
+                        Expanded(child: cards[1]),
+                        const SizedBox(width: 16),
+                        Expanded(child: cards[2]),
+                        const SizedBox(width: 16),
+                        Expanded(child: cards[3]),
+                      ],
                     ),
-                  ],
-                ),
+                  const SizedBox(height: 16),
+                  _ChartCard(
+                    title: 'Detail Log Stok',
+                    tag: tagLabel,
+                    child: _LogTable(
+                      logs: logs,
+                      produkMap: produkMap,
+                    ),
+                  ),
+                ],
               );
+
+              if (wrapInScroll) {
+                return SingleChildScrollView(child: content);
+              }
+              return content;
             },
           );
           },
@@ -1252,7 +1257,10 @@ class _LogTable extends StatefulWidget {
   final List<Map<String, dynamic>> logs;
   final Map<String, _ProdukInfo>? produkMap;
 
-  const _LogTable({required this.logs, this.produkMap});
+  const _LogTable({
+    required this.logs,
+    this.produkMap,
+  });
 
   @override
   State<_LogTable> createState() => _LogTableState();
@@ -1311,6 +1319,7 @@ class _LogTableState extends State<_LogTable> {
         return '-';
     }
   }
+
 
   Widget _badge(BuildContext context, String text, Color color) {
     return Container(
@@ -1448,7 +1457,7 @@ class _LogTableState extends State<_LogTable> {
       });
     var totalModalAll = 0;
     var totalLabaAll = 0;
-    for (final log in sorted) {
+    for (final log in widget.logs) {
       final id = log['produk_id'];
       final info = id is String
           ? (widget.produkMap != null ? widget.produkMap![id] : null)
@@ -1470,6 +1479,7 @@ class _LogTableState extends State<_LogTable> {
     const widths = [
       60.0,
       170.0,
+      140.0,
       160.0,
       200.0,
       140.0,
@@ -1481,8 +1491,8 @@ class _LogTableState extends State<_LogTable> {
       120.0,
       130.0,
       130.0,
-      120.0,
-      100.0,
+      160.0,
+      140.0,
     ];
     final tableBaseWidth = widths.reduce((a, b) => a + b);
     return LayoutBuilder(
@@ -1523,6 +1533,7 @@ class _LogTableState extends State<_LogTable> {
                         Text('No', style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Tanggal',
                             style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('User', style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Invoice',
                             style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Produk',
@@ -1545,9 +1556,8 @@ class _LogTableState extends State<_LogTable> {
                             style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Laba Total',
                             style: TextStyle(fontWeight: FontWeight.w700)),
-                        Text('Sumber',
+                        Text('Aktivitas',
                             style: TextStyle(fontWeight: FontWeight.w700)),
-                        Text('Tipe', style: TextStyle(fontWeight: FontWeight.w700)),
                       ],
                       widths: adjustedWidths,
                       isHeader: true,
@@ -1557,20 +1567,25 @@ class _LogTableState extends State<_LogTable> {
                       final no = entry.key + 1;
                       final log = entry.value;
                       final ts = log['waktu'];
-                      final dt = ts is Timestamp ? ts.toDate() : DateTime(1970);
+                      final dt =
+                          ts is Timestamp ? ts.toDate() : DateTime(1970);
                       final id = log['produk_id'];
                       final namaProduk = log['nama_produk'];
                       final info = id is String
-                          ? (widget.produkMap != null ? widget.produkMap![id] : null)
+                          ? (widget.produkMap != null
+                              ? widget.produkMap![id]
+                              : null)
                           : null;
-                      final nama = (namaProduk ?? info?.nama ?? 'Produk').toString();
-                      final kategori =
-                          (info?.kategori ?? 'Lainnya').toString();
+                      final nama =
+                          (namaProduk ?? info?.nama ?? 'Produk').toString();
+                      final kategori = (info?.kategori ?? 'Lainnya').toString();
                       final barcode = (info?.barcode ?? '-').toString();
                       final perubahan = (log['perubahan'] ?? 0) as int;
                       final stokAkhir = (log['stok_akhir'] ?? 0) as int;
-                      final sumber = (log['sumber'] ?? '').toString().toLowerCase();
-                      final tipe = (log['tipe'] ?? '').toString().toLowerCase();
+                      final sumber =
+                          (log['sumber'] ?? '').toString().toLowerCase();
+                      final tipe =
+                          (log['tipe'] ?? '').toString().toLowerCase();
                       final invoiceRaw = log['refId'] ?? log['transaksiId'];
                       final invoice = sumber == 'pos' && invoiceRaw != null
                           ? invoiceRaw.toString()
@@ -1578,13 +1593,18 @@ class _LogTableState extends State<_LogTable> {
                       final isHarga = tipe == 'harga';
                       final labelPerubahan = isHarga
                           ? '-'
-                          : (perubahan >= 0 ? '+$perubahan' : perubahan.toString());
+                          : (perubahan >= 0
+                              ? '+$perubahan'
+                              : perubahan.toString());
                       final qty = isHarga ? 0 : perubahan.abs();
                       final modalRaw = log['harga_modal'];
                       final jualRaw = log['harga_jual'];
-                      final hasPrice = modalRaw is int || jualRaw is int || info != null;
-                      final modal = modalRaw is int ? modalRaw : (info?.hargaModal ?? 0);
-                      final jual = jualRaw is int ? jualRaw : (info?.hargaJual ?? 0);
+                      final hasPrice =
+                          modalRaw is int || jualRaw is int || info != null;
+                      final modal =
+                          modalRaw is int ? modalRaw : (info?.hargaModal ?? 0);
+                      final jual =
+                          jualRaw is int ? jualRaw : (info?.hargaJual ?? 0);
                       final labaUnit = jual - modal;
                       final modalTotal = modal * qty;
                       final labaTotal = labaUnit * qty;
@@ -1594,14 +1614,14 @@ class _LogTableState extends State<_LogTable> {
                       final perubahanColor = perubahan >= 0
                           ? const Color(0xFF2A9D6F)
                           : const Color(0xFFD06C64);
-                      final sumberColor = sumber == 'pos'
-                          ? const Color(0xFFF2B05A)
-                          : sumber == 'restock'
-                              ? const Color(0xFF4B7BE5)
-                              : const Color(0xFF6B7280);
-                      final tipeColor = tipe == 'masuk'
-                          ? const Color(0xFF2A9D6F)
-                          : const Color(0xFFD06C64);
+                      final actorName = (log['actor_name'] ??
+                              log['actor_email'] ??
+                              log['actor_uid'] ??
+                              '-')
+                          .toString();
+                      final aktivitas = isHarga
+                          ? 'Penyesuaian Harga'
+                          : '${_labelSumber(sumber)} · ${_labelTipe(tipe)}';
                       return MouseRegion(
                         onEnter: (_) => setState(() => _hoveredIndex = entry.key),
                         onExit: (_) => setState(() => _hoveredIndex = null),
@@ -1610,6 +1630,7 @@ class _LogTableState extends State<_LogTable> {
                           cells: [
                             Text(no.toString(), textAlign: TextAlign.center),
                             Text(_formatTanggalJam(dt)),
+                            Text(actorName),
                             Text(invoice),
                             Text(nama),
                             Text(kategori),
@@ -1641,8 +1662,7 @@ class _LogTableState extends State<_LogTable> {
                               isHarga ? '-' : _formatRupiahSimple(labaTotal),
                               textAlign: TextAlign.center,
                             ),
-                            _badge(context, _labelSumber(sumber), sumberColor),
-                            _badge(context, _labelTipe(tipe), tipeColor),
+                            Text(aktivitas),
                           ],
                           widths: adjustedWidths,
                           isHeader: false,
@@ -1695,6 +1715,300 @@ class _LogTableState extends State<_LogTable> {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+class _MergedTimeline extends StatelessWidget {
+  final List<Map<String, dynamic>> logs;
+  final List<Map<String, dynamic>> activityLogs;
+  final Map<String, _ProdukInfo>? produkMap;
+
+  const _MergedTimeline({
+    required this.logs,
+    required this.activityLogs,
+    this.produkMap,
+  });
+
+  DateTime _resolveTime(Map<String, dynamic> item) {
+    final kind = item['kind'];
+    final data = item['data'];
+    if (kind == 'aktivitas' && data is Map) {
+      final ts = data['created_at'];
+      return ts is Timestamp ? ts.toDate() : DateTime(1970);
+    }
+    if (data is Map) {
+      final ts = data['waktu'];
+      return ts is Timestamp ? ts.toDate() : DateTime(1970);
+    }
+    return DateTime(1970);
+  }
+
+  String _formatTanggalJam(DateTime dt) {
+    const bulan = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'Mei',
+      'Jun',
+      'Jul',
+      'Agu',
+      'Sep',
+      'Okt',
+      'Nov',
+      'Des',
+    ];
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = bulan[dt.month - 1];
+    final year = dt.year.toString();
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$day $month $year $hour:$minute';
+  }
+
+  String _labelAksiActivity(String value) {
+    switch (value) {
+      case 'produk_tambah':
+        return 'Tambah produk';
+      case 'produk_hapus':
+        return 'Hapus produk';
+      case 'produk_ubah':
+        return 'Ubah produk';
+      case 'stok_ubah':
+        return 'Ubah stok';
+      case 'harga_ubah':
+        return 'Ubah harga';
+      case 'transaksi':
+        return 'Transaksi';
+      case 'user_create':
+        return 'Buat user';
+      case 'user_update_role':
+        return 'Ubah role user';
+      case 'user_update_email':
+        return 'Ubah email user';
+      case 'user_update_nickname':
+        return 'Ubah nama user';
+      case 'user_delete':
+        return 'Hapus user';
+      case 'user_disable':
+        return 'Nonaktifkan user';
+      case 'user_enable':
+        return 'Aktifkan user';
+      case 'reset_password':
+        return 'Reset password';
+      case 'role_default_update':
+        return 'Ubah default role';
+      case 'user_access_override':
+        return 'Akses khusus user';
+      default:
+        return value.isEmpty ? '-' : value;
+    }
+  }
+
+  String _labelSumber(String raw) {
+    switch (raw) {
+      case 'init':
+        return 'Produk Baru';
+      case 'restock':
+        return 'Restok';
+      case 'pos':
+        return 'Penjualan';
+      case 'edit':
+        return 'Penyesuaian';
+      default:
+        return 'Lainnya';
+    }
+  }
+
+  String _labelKategoriActivity(String value) {
+    switch (value) {
+      case 'produk':
+        return 'Produk';
+      case 'stok':
+        return 'Stok';
+      case 'transaksi':
+        return 'Transaksi';
+      case 'user':
+        return 'User';
+      case 'harga':
+        return 'Harga';
+      case 'password':
+        return 'Password';
+      default:
+        return value.isEmpty ? '-' : value;
+    }
+  }
+
+  String _buildDetailActivity(Map<String, dynamic> log) {
+    final parts = <String>[];
+    final target = (log['target_label'] ?? '').toString().trim();
+    if (target.isNotEmpty) {
+      parts.add(target);
+    }
+    final meta = log['meta'];
+    if (meta is Map) {
+      if (meta['total'] != null) {
+        parts.add('Total: Rp ${meta['total']}');
+      }
+      if (meta['items'] != null) {
+        parts.add('Item: ${meta['items']}');
+      }
+      if (meta['stok_lama'] != null && meta['stok_baru'] != null) {
+        parts.add('Stok ${meta['stok_lama']} -> ${meta['stok_baru']}');
+      }
+      if (meta['harga_lama'] != null && meta['harga_baru'] != null) {
+        parts.add('Harga ${meta['harga_lama']} -> ${meta['harga_baru']}');
+      }
+      if (meta['role_baru'] != null) {
+        parts.add('Role: ${meta['role_baru']}');
+      }
+      if (meta['email_baru'] != null) {
+        parts.add('Email: ${meta['email_baru']}');
+      }
+    }
+    return parts.isEmpty ? '-' : parts.join(' | ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final merged = <Map<String, dynamic>>[
+      for (final log in logs) {'kind': 'stok', 'data': log},
+      for (final log in activityLogs) {'kind': 'aktivitas', 'data': log},
+    ]
+      ..sort((a, b) => _resolveTime(b).compareTo(_resolveTime(a)));
+
+    if (merged.isEmpty) {
+      return const SizedBox(
+        height: 140,
+        child: Center(child: Text('Belum ada data log pada rentang ini')),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: merged.length,
+      separatorBuilder: (_, __) => const Divider(height: 20),
+      itemBuilder: (context, index) {
+        final item = merged[index];
+        final kind = item['kind'];
+        final data = item['data'];
+        final time = _formatTanggalJam(_resolveTime(item));
+        final scheme = Theme.of(context).colorScheme;
+
+        if (kind == 'aktivitas' && data is Map<String, dynamic>) {
+          final action =
+              _labelAksiActivity((data['action'] ?? '').toString());
+          final category = _labelKategoriActivity(
+            (data['category'] ?? '').toString().toLowerCase(),
+          );
+          final detail = _buildDetailActivity(data);
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(top: 6),
+                decoration: BoxDecoration(
+                  color: scheme.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      action,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      detail,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color:
+                            scheme.onSurface.withValues(alpha: 0.65),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$category • $time',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color:
+                            scheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        if (data is! Map<String, dynamic>) {
+          return const SizedBox.shrink();
+        }
+
+        final log = data;
+        final id = log['produk_id'];
+        final info = id is String ? (produkMap?[id]) : null;
+        final namaProduk =
+            (log['nama_produk'] ?? info?.nama ?? 'Produk').toString();
+        final perubahan = (log['perubahan'] ?? 0) as int;
+        final sumber = (log['sumber'] ?? '').toString().toLowerCase();
+        final labelSumber = _labelSumber(sumber);
+        final labelPerubahan =
+            perubahan >= 0 ? '+$perubahan' : perubahan.toString();
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(top: 6),
+              decoration: BoxDecoration(
+                color: perubahan >= 0
+                    ? const Color(0xFF2A9D6F)
+                    : const Color(0xFFD06C64),
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    namaProduk,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$labelSumber • $labelPerubahan',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurface.withValues(alpha: 0.65),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    time,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );
