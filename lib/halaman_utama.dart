@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'features/transaksi/halaman_pos.dart';
 import 'features/stok/halaman_stok.dart';
 import 'features/laporan/halaman_laporan.dart';
+import 'features/aktivitas/halaman_aktivitas_sistem.dart';
 import 'features/users/halaman_user.dart';
 
 import 'database/services/firestore_service.dart';
@@ -80,6 +81,7 @@ enum _PageKey {
   dashboard,
   stok,
   laporan,
+  aktivitas,
   users,
 }
 
@@ -142,6 +144,13 @@ class _HalamanUtamaState extends State<HalamanUtama> {
         label: 'Laporan',
       ));
     }
+    if (pages['aktivitas'] == true) {
+      items.add(const _NavItem(
+        page: _PageKey.aktivitas,
+        icon: Icons.event_note_outlined,
+        label: 'Aktivitas Sistem',
+      ));
+    }
     if (pages['users'] == true) {
       items.add(const _NavItem(
         page: _PageKey.users,
@@ -169,6 +178,10 @@ class _HalamanUtamaState extends State<HalamanUtama> {
       title: 'Laporan',
       subtitle: 'Ringkasan performa dan detail transaksi',
     ),
+    _PageKey.aktivitas: _HeaderInfo(
+      title: 'Aktivitas Sistem',
+      subtitle: 'Catatan aktivitas pengguna dan sistem',
+    ),
     _PageKey.users: _HeaderInfo(
       title: 'Users',
       subtitle: 'Kelola akun dan peran pengguna',
@@ -194,6 +207,8 @@ class _HalamanUtamaState extends State<HalamanUtama> {
         );
       case _PageKey.laporan:
         return const HalamanLaporan();
+      case _PageKey.aktivitas:
+        return const HalamanAktivitasSistem();
       case _PageKey.users:
         return HalamanUser(
           canCreate: features['users_create'] == true,

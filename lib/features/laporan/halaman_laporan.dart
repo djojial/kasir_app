@@ -202,8 +202,11 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       final headers = [
         'No',
         'Tanggal',
+        'User',
         'Invoice',
         'Produk',
+        'Kategori',
+        'Barcode',
         'Perubahan',
         'Stok Akhir',
         'Harga Modal',
@@ -211,8 +214,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         'Laba/Unit',
         'Modal Total',
         'Laba Total',
-        'Sumber',
-        'Tipe',
+        'Aktivitas',
       ];
 
       var totalModalAll = 0;
@@ -237,8 +239,15 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         final nama = (namaProduk ?? info?.nama ?? 'Produk').toString();
         final perubahan = (log['perubahan'] ?? 0) as int;
         final stokAkhir = (log['stok_akhir'] ?? 0) as int;
-                      final sumber = (log['sumber'] ?? '').toString().toLowerCase();
-                      final tipe = (log['tipe'] ?? '').toString().toLowerCase();
+        final sumber = (log['sumber'] ?? '').toString().toLowerCase();
+        final tipe = (log['tipe'] ?? '').toString().toLowerCase();
+        final kategori = (info?.kategori ?? 'Lainnya').toString();
+        final barcode = (info?.barcode ?? '-').toString();
+        final actorName = (log['actor_name'] ??
+                log['actor_email'] ??
+                log['actor_uid'] ??
+                '-')
+            .toString();
         final invoiceRaw = log['refId'] ?? log['transaksiId'];
         final invoice = sumber == 'pos' && invoiceRaw != null
             ? invoiceRaw.toString()
@@ -265,11 +274,16 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
           totalLabaAll += labaTotal;
         }
 
+        final aktivitas = _buildAktivitasStokDetail(log);
+
         rows.add([
           '${i + 1}',
           _formatTanggalJam(dt),
+          actorName,
           invoice,
           nama,
+          kategori,
+          barcode,
           labelPerubahan,
           stokAkhir.toString(),
           hasPrice ? _formatRupiahSimple(modal) : '-',
@@ -277,12 +291,12 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
           hasPrice ? _formatRupiahSimple(labaUnit) : '-',
           isHarga ? '-' : _formatRupiahSimple(modalTotal),
           isHarga ? '-' : _formatRupiahSimple(labaTotal),
-          _labelSumber(sumber),
-          _labelTipe(tipe),
+          aktivitas,
         ]);
       }
 
       rows.add([
+        '',
         '',
         '',
         '',
@@ -292,11 +306,30 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         '',
         '',
         '',
+        '',
+        '',
         _formatRupiahSimple(totalModalAll),
         _formatRupiahSimple(totalLabaAll),
         '',
-        '',
       ]);
+
+      final columnWidths = <int, pw.TableColumnWidth>{
+        0: const pw.FixedColumnWidth(20),
+        1: const pw.FixedColumnWidth(64),
+        2: const pw.FixedColumnWidth(40),
+        3: const pw.FixedColumnWidth(62),
+        4: const pw.FixedColumnWidth(60),
+        5: const pw.FixedColumnWidth(40),
+        6: const pw.FixedColumnWidth(60),
+        7: const pw.FixedColumnWidth(48),
+        8: const pw.FixedColumnWidth(46),
+        9: const pw.FixedColumnWidth(48),
+        10: const pw.FixedColumnWidth(34),
+        11: const pw.FixedColumnWidth(44),
+        12: const pw.FixedColumnWidth(52),
+        13: const pw.FixedColumnWidth(52),
+        14: const pw.FixedColumnWidth(70),
+      };
 
       doc.addPage(
         pw.MultiPage(
@@ -376,25 +409,26 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
             pw.Table.fromTextArray(
               headers: headers,
               data: rows,
-              cellStyle: const pw.TextStyle(fontSize: 9),
+              columnWidths: columnWidths,
+              cellStyle: const pw.TextStyle(fontSize: 7.5),
               headerStyle: pw.TextStyle(
-                fontSize: 9,
+                fontSize: 7.5,
                 fontWeight: pw.FontWeight.bold,
               ),
+              cellPadding:
+                  const pw.EdgeInsets.symmetric(horizontal: 3, vertical: 2),
               headerDecoration:
                   const pw.BoxDecoration(color: PdfColors.grey300),
               cellAlignment: pw.Alignment.centerLeft,
               cellAlignments: {
                 0: pw.Alignment.center,
-                4: pw.Alignment.center,
-                5: pw.Alignment.center,
-                6: pw.Alignment.center,
                 7: pw.Alignment.center,
                 8: pw.Alignment.center,
                 9: pw.Alignment.center,
                 10: pw.Alignment.center,
                 11: pw.Alignment.center,
                 12: pw.Alignment.center,
+                13: pw.Alignment.center,
               },
             ),
           ],
@@ -542,6 +576,74 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         return '-';
     }
   }
+
+
+  String _buildAktivitasStokDetail(Map<String, dynamic> log) {
+    final sumber = (log['sumber'] ?? '').toString().toLowerCase();
+    final tipe = (log['tipe'] ?? '').toString().toLowerCase();
+    final perubahan = (log['perubahan'] ?? 0) as int;
+    final qty = perubahan.abs();
+    final catatan = (log['catatan'] ?? '').toString().trim();
+    final invoiceRaw = log['refId'] ?? log['transaksiId'];
+    final invoice =
+        sumber == 'pos' && invoiceRaw != null ? invoiceRaw.toString() : '';
+
+    if (tipe == 'harga') {
+      final modalLama = log['harga_modal_lama'];
+      final modalBaru = log['harga_modal'];
+      final jualLama = log['harga_jual_lama'];
+      final jualBaru = log['harga_jual'];
+      final parts = <String>['Ubah harga'];
+      if (modalLama is int && modalBaru is int && modalLama != modalBaru) {
+        parts.add(
+          'Modal ${_formatRupiahSimple(modalLama)} -> ${_formatRupiahSimple(modalBaru)}',
+        );
+      }
+      if (jualLama is int && jualBaru is int && jualLama != jualBaru) {
+        parts.add(
+          'Jual ${_formatRupiahSimple(jualLama)} -> ${_formatRupiahSimple(jualBaru)}',
+        );
+      }
+      return parts.join(' | ');
+    }
+
+    String base;
+    String detail = '';
+    if (sumber == 'init') {
+      base = 'Produk baru';
+      detail = 'Stok awal $qty';
+    } else if (sumber == 'restock') {
+      base = 'Restok';
+      detail = perubahan >= 0 ? '+$qty' : '-$qty';
+    } else if (sumber == 'pos') {
+      base = 'Penjualan';
+      detail = qty == 0 ? '' : '-$qty';
+    } else if (sumber == 'edit' &&
+        catatan.toLowerCase() == 'hapus produk') {
+      base = 'Hapus produk';
+      detail = qty == 0 ? '' : '-$qty';
+    } else if (sumber == 'edit') {
+      base = 'Penyesuaian stok';
+      detail = qty == 0 ? '' : (perubahan >= 0 ? '+$qty' : '-$qty');
+    } else {
+      base = _labelSumber(sumber);
+      detail = qty == 0 ? _labelTipe(tipe) : (perubahan >= 0 ? '+$qty' : '-$qty');
+    }
+
+    final parts = <String>[base];
+    if (detail.isNotEmpty) {
+      parts.add(detail);
+    }
+    if (invoice.isNotEmpty) {
+      parts.add('Inv $invoice');
+    }
+    if (catatan.isNotEmpty && catatan.toLowerCase() != 'hapus produk') {
+      parts.add(catatan);
+    }
+    return parts.join(' | ');
+  }
+
+
 
 }
 
@@ -1320,6 +1422,70 @@ class _LogTableState extends State<_LogTable> {
     }
   }
 
+  String _buildAktivitasStokDetail(Map<String, dynamic> log) {
+    final sumber = (log['sumber'] ?? '').toString().toLowerCase();
+    final tipe = (log['tipe'] ?? '').toString().toLowerCase();
+    final perubahan = (log['perubahan'] ?? 0) as int;
+    final qty = perubahan.abs();
+    final catatan = (log['catatan'] ?? '').toString().trim();
+    final invoiceRaw = log['refId'] ?? log['transaksiId'];
+    final invoice =
+        sumber == 'pos' && invoiceRaw != null ? invoiceRaw.toString() : '';
+
+    if (tipe == 'harga') {
+      final modalLama = log['harga_modal_lama'];
+      final modalBaru = log['harga_modal'];
+      final jualLama = log['harga_jual_lama'];
+      final jualBaru = log['harga_jual'];
+      final parts = <String>['Ubah harga'];
+      if (modalLama is int && modalBaru is int && modalLama != modalBaru) {
+        parts.add(
+          'Modal ${_formatRupiahSimple(modalLama)} -> ${_formatRupiahSimple(modalBaru)}',
+        );
+      }
+      if (jualLama is int && jualBaru is int && jualLama != jualBaru) {
+        parts.add(
+          'Jual ${_formatRupiahSimple(jualLama)} -> ${_formatRupiahSimple(jualBaru)}',
+        );
+      }
+      return parts.join(' | ');
+    }
+
+    String base;
+    String detail = '';
+    if (sumber == 'init') {
+      base = 'Produk baru';
+      detail = 'Stok awal $qty';
+    } else if (sumber == 'restock') {
+      base = 'Restok';
+      detail = perubahan >= 0 ? '+$qty' : '-$qty';
+    } else if (sumber == 'pos') {
+      base = 'Penjualan';
+      detail = qty == 0 ? '' : '-$qty';
+    } else if (sumber == 'edit' &&
+        catatan.toLowerCase() == 'hapus produk') {
+      base = 'Hapus produk';
+      detail = qty == 0 ? '' : '-$qty';
+    } else if (sumber == 'edit') {
+      base = 'Penyesuaian stok';
+      detail = qty == 0 ? '' : (perubahan >= 0 ? '+$qty' : '-$qty');
+    } else {
+      base = _labelSumber(sumber);
+      detail = qty == 0 ? _labelTipe(tipe) : (perubahan >= 0 ? '+$qty' : '-$qty');
+    }
+
+    final parts = <String>[base];
+    if (detail.isNotEmpty) {
+      parts.add(detail);
+    }
+    if (invoice.isNotEmpty) {
+      parts.add('Inv $invoice');
+    }
+    if (catatan.isNotEmpty && catatan.toLowerCase() != 'hapus produk') {
+      parts.add(catatan);
+    }
+    return parts.join(' | ');
+  }
 
   Widget _badge(BuildContext context, String text, Color color) {
     return Container(
@@ -1619,9 +1785,7 @@ class _LogTableState extends State<_LogTable> {
                               log['actor_uid'] ??
                               '-')
                           .toString();
-                      final aktivitas = isHarga
-                          ? 'Penyesuaian Harga'
-                          : '${_labelSumber(sumber)} · ${_labelTipe(tipe)}';
+                      final aktivitas = _buildAktivitasStokDetail(log);
                       return MouseRegion(
                         onEnter: (_) => setState(() => _hoveredIndex = entry.key),
                         onExit: (_) => setState(() => _hoveredIndex = null),
@@ -2056,31 +2220,18 @@ class _RingkasanCard extends StatelessWidget {
           border: Border.all(color: Theme.of(context).dividerColor),
           boxShadow: _luxShadow(context),
         ),
-        child: Row(
-          children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: color.withValues(alpha: 0.45)),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Icon(icon, color: color, size: 26),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isTight = constraints.maxWidth < 140;
+            final info = Column(
+              crossAxisAlignment:
+                  isTight ? CrossAxisAlignment.center : CrossAxisAlignment.start,
               children: [
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  alignment: isTight ? WrapAlignment.center : WrapAlignment.start,
                   children: [
                     Text(
                       title,
@@ -2089,10 +2240,9 @@ class _RingkasanCard extends StatelessWidget {
                         fontSize: 12,
                       ),
                     ),
-                    const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: scheme.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(999),
@@ -2127,9 +2277,45 @@ class _RingkasanCard extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-          ],
+            );
+
+            final iconChip = Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: color.withValues(alpha: 0.45)),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: color, size: 26),
+            );
+
+            if (isTight) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  iconChip,
+                  const SizedBox(height: 12),
+                  info,
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                iconChip,
+                const SizedBox(width: 12),
+                Expanded(child: info),
+              ],
+            );
+          },
         ),
       ),
     );

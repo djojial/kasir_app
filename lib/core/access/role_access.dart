@@ -5,6 +5,7 @@ const List<String> kAccessPages = [
   'transaksi',
   'stok',
   'laporan',
+  'aktivitas',
   'users',
 ];
 
@@ -24,6 +25,7 @@ const Map<String, Map<String, Map<String, bool>>> kDefaultRoleAccess = {
       'transaksi': true,
       'stok': true,
       'laporan': true,
+      'aktivitas': true,
       'users': true,
     },
     'features': {
@@ -41,6 +43,7 @@ const Map<String, Map<String, Map<String, bool>>> kDefaultRoleAccess = {
       'transaksi': false,
       'stok': true,
       'laporan': true,
+      'aktivitas': true,
       'users': false,
     },
     'features': {
@@ -58,6 +61,7 @@ const Map<String, Map<String, Map<String, bool>>> kDefaultRoleAccess = {
       'transaksi': true,
       'stok': true,
       'laporan': false,
+      'aktivitas': false,
       'users': false,
     },
     'features': {

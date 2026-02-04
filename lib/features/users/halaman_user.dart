@@ -1,9 +1,6 @@
-import 'dart:convert';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
 import '../../core/ui/app_feedback.dart';
 import '../../core/ui/interactive_widgets.dart';
@@ -45,6 +42,7 @@ class _HalamanUserState extends State<HalamanUser> {
     'transaksi': 'Transaksi',
     'stok': 'Stok',
     'laporan': 'Laporan',
+    'aktivitas': 'Aktivitas Sistem',
     'users': 'Users',
   };
   static const _featureLabels = {
@@ -230,11 +228,6 @@ class _HalamanUserState extends State<HalamanUser> {
     }
   }
 
-  String _functionsBaseUrl() {
-    final projectId = Firebase.app().options.projectId;
-    return 'https://us-central1-$projectId.cloudfunctions.net';
-  }
-
   Future<void> _resetPasswordViaAdmin({
     required String email,
     required String role,
@@ -249,147 +242,7 @@ class _HalamanUserState extends State<HalamanUser> {
       return;
     }
 
-    if (role == 'admin') {
-      await _resetPassword(target);
-      return;
-    }
-
-    final controller = TextEditingController();
-    final confirmController = TextEditingController();
-    final newPassword = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Reset Password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Buat password baru untuk $target',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(dialogContext)
-                    .colorScheme
-                    .onSurface
-                    .withValues(alpha: 0.7),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password baru',
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: confirmController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Konfirmasi password',
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(dialogContext).pop(
-              controller.text.trim(),
-            ),
-            child: const Text('Simpan'),
-          ),
-        ],
-      ),
-    );
-    final confirmText = confirmController.text.trim();
-    controller.dispose();
-    confirmController.dispose();
-    if (newPassword == null) return;
-
-    if (newPassword.length < 6) {
-      AppFeedback.show(
-        context,
-        message: 'Password minimal 6 karakter',
-        type: AppFeedbackType.error,
-      );
-      return;
-    }
-    if (newPassword != confirmText) {
-      AppFeedback.show(
-        context,
-        message: 'Konfirmasi password tidak sama',
-        type: AppFeedbackType.error,
-      );
-      return;
-    }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      AppFeedback.show(
-        context,
-        message: 'Sesi login tidak ditemukan',
-        type: AppFeedbackType.error,
-      );
-      return;
-    }
-
-    AppFeedback.showLoading(context, message: 'Menyimpan password...');
-    try {
-      final token = await user.getIdToken();
-      final url = Uri.parse('${_functionsBaseUrl()}/setUserPassword');
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'email': target,
-          'password': newPassword,
-        }),
-      );
-      if (response.statusCode != 200) {
-        final body = response.body.isNotEmpty ? jsonDecode(response.body) : null;
-        final message = body is Map && body['error'] is String
-            ? body['error'] as String
-            : 'Gagal reset password';
-        AppFeedback.show(
-          context,
-          message: message,
-          type: AppFeedbackType.error,
-        );
-        return;
-      }
-      AppFeedback.show(
-        context,
-        message: 'Password berhasil direset',
-        type: AppFeedbackType.success,
-      );
-      final actor = await _resolveActor();
-      await _firestore.logActivity(
-        action: 'reset_password',
-        category: 'password',
-        targetLabel: target,
-        meta: {
-          'email': target,
-        },
-        actor: actor,
-      );
-    } catch (e) {
-      AppFeedback.show(
-        context,
-        message: 'Gagal reset password',
-        type: AppFeedbackType.error,
-      );
-    } finally {
-      AppFeedback.hideLoading();
-    }
+    await _resetPassword(target);
   }
 
   Future<void> _deleteUserDoc({

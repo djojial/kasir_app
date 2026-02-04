@@ -100,20 +100,12 @@ class _HalamanLoginState extends State<HalamanLogin> {
           (data?['role'] ?? '').toString().trim().toLowerCase();
       AppFeedback.hideLoading();
 
-      if (role != 'admin') {
-        if (role.isEmpty) {
-          AppFeedback.show(
-            rootContext,
-            message: 'Email belum terdaftar.',
-            type: AppFeedbackType.error,
-          );
-        } else {
-          AppFeedback.show(
-            rootContext,
-            message: 'Hubungi Admin.',
-            type: AppFeedbackType.info,
-          );
-        }
+      if (role.isEmpty) {
+        AppFeedback.show(
+          rootContext,
+          message: 'Email belum terdaftar.',
+          type: AppFeedbackType.error,
+        );
         return;
       }
 

@@ -151,6 +151,9 @@ class FirestoreService {
     int? stokLama;
     int? hargaLama;
     int? modalLama;
+    int? diskonMinQtyLama;
+    int? diskonHargaLama;
+    int? diskonPersenLama;
     String? namaLama;
     await _db.runTransaction((trx) async {
       final snap = await trx.get(ref);
@@ -160,6 +163,9 @@ class FirestoreService {
       stokLama = (data['stok'] ?? 0) as int;
       hargaLama = (data['harga'] ?? 0) as int;
       modalLama = (data['harga_modal'] ?? 0) as int;
+      diskonMinQtyLama = (data['diskon_min_qty'] ?? 0) as int;
+      diskonHargaLama = (data['diskon_harga'] ?? 0) as int;
+      diskonPersenLama = (data['diskon_persen'] ?? 0) as int;
       namaLama = (data['nama'] ?? '').toString();
 
       trx.update(ref, p.toMap());
@@ -218,6 +224,12 @@ class FirestoreService {
     }
     if ((hargaLama != null && p.harga != hargaLama) ||
         (modalLama != null && p.hargaModal != modalLama)) {
+      final labaLama = (modalLama != null && modalLama! > 0)
+          ? (((hargaLama! - modalLama!) / modalLama!) * 100).round()
+          : null;
+      final labaBaru = p.hargaModal > 0
+          ? (((p.harga - p.hargaModal) / p.hargaModal) * 100).round()
+          : null;
       await logActivity(
         action: 'harga_ubah',
         category: 'harga',
@@ -228,6 +240,30 @@ class FirestoreService {
           'harga_baru': p.harga,
           'harga_modal_lama': modalLama,
           'harga_modal_baru': p.hargaModal,
+          if (labaLama != null) 'laba_persen_lama': labaLama,
+          if (labaBaru != null) 'laba_persen_baru': labaBaru,
+        },
+        actor: actor,
+      );
+    }
+    if (diskonMinQtyLama != null &&
+        diskonHargaLama != null &&
+        diskonPersenLama != null &&
+        (p.diskonMinQty != diskonMinQtyLama ||
+            p.diskonHarga != diskonHargaLama ||
+            p.diskonPersen != diskonPersenLama)) {
+      await logActivity(
+        action: 'diskon_ubah',
+        category: 'produk',
+        targetId: p.id,
+        targetLabel: p.nama,
+        meta: {
+          'diskon_min_qty_lama': diskonMinQtyLama,
+          'diskon_min_qty_baru': p.diskonMinQty,
+          'diskon_harga_lama': diskonHargaLama,
+          'diskon_harga_baru': p.diskonHarga,
+          'diskon_persen_lama': diskonPersenLama,
+          'diskon_persen_baru': p.diskonPersen,
         },
         actor: actor,
       );
@@ -657,24 +693,21 @@ class FirestoreService {
       payload['target_label'] = targetLabel;
     }
     _attachActor(payload, actor);
-    await _stokLogRef.add(payload);
+    await _activityLogRef.add(payload);
   }
 
   Stream<List<Map<String, dynamic>>> streamActivityLogs() {
     if (_usePolling) {
       return _pollWithCache(
         load: () async {
-          final snap = await _stokLogRef
-              .where('log_type', isEqualTo: 'activity')
-              .orderBy('waktu', descending: true)
-              .get();
+          final snap =
+              await _activityLogRef.orderBy('waktu', descending: true).get();
           return snap.docs
               .map((d) => Map<String, dynamic>.from(d.data() as Map))
               .toList();
         },
         loadCache: () async {
-          final snap = await _stokLogRef
-              .where('log_type', isEqualTo: 'activity')
+          final snap = await _activityLogRef
               .orderBy('waktu', descending: true)
               .get(const GetOptions(source: Source.cache));
           return snap.docs
@@ -683,13 +716,29 @@ class FirestoreService {
         },
       );
     }
-    return _stokLogRef
-        .where('log_type', isEqualTo: 'activity')
+    return _activityLogRef
         .orderBy('waktu', descending: true)
         .snapshots()
         .map((snap) => snap.docs
             .map((d) => Map<String, dynamic>.from(d.data() as Map))
             .toList());
+  }
+
+  Future<void> purgeOldActivityLogs({Duration maxAge = const Duration(days: 365)}) async {
+    final cutoff = DateTime.now().subtract(maxAge);
+    final cutoffTs = Timestamp.fromDate(cutoff);
+    while (true) {
+      final snap = await _activityLogRef
+          .where('waktu', isLessThan: cutoffTs)
+          .limit(200)
+          .get();
+      if (snap.docs.isEmpty) break;
+      final batch = _db.batch();
+      for (final doc in snap.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
   }
 
   Future<void> setDashboardResetNow() async {
