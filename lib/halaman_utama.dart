@@ -976,6 +976,69 @@ class _SummaryRowState extends State<_SummaryRow> {
     return '$day $month ${date.year}';
   }
 
+  Future<void> _showMonthMenu(BuildContext context, List<String> labels) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final box = context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        box.localToGlobal(Offset.zero, ancestor: overlay),
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    final selected = await showMenu<int>(
+      context: context,
+      position: position,
+      items: [
+        PopupMenuItem<int>(
+          padding: EdgeInsets.zero,
+          child: _MonthGridMenu(
+            labels: labels,
+            selected: _bulan,
+            onSelected: (value) => Navigator.pop(context, value),
+          ),
+        ),
+      ],
+    );
+    if (selected != null && mounted) {
+      setState(() => _bulan = selected);
+    }
+  }
+
+  Future<void> _showYearMenu(
+    BuildContext context,
+    List<int> years,
+  ) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final box = context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        box.localToGlobal(Offset.zero, ancestor: overlay),
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    final selected = await showMenu<int>(
+      context: context,
+      position: position,
+      items: [
+        PopupMenuItem<int>(
+          padding: EdgeInsets.zero,
+          child: _YearGridMenu(
+            years: years,
+            selected: _tahun,
+            onSelected: (value) => Navigator.pop(context, value),
+          ),
+        ),
+      ],
+    );
+    if (selected != null && mounted) {
+      setState(() => _tahun = selected);
+    }
+  }
+
   Future<void> _confirmReset() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -1104,49 +1167,29 @@ class _SummaryRowState extends State<_SummaryRow> {
                   _SelectChip(
                     icon: Icons.calendar_month_outlined,
                     label: bulanLabels[_bulan - 1],
-                    child: PopupMenuButton<int>(
-                      tooltip: 'Pilih bulan',
-                      onSelected: (value) => setState(() => _bulan = value),
-                      constraints: const BoxConstraints(minWidth: 140),
-                      itemBuilder: (context) => [
-                        for (var i = 0; i < bulanLabels.length; i++)
-                          PopupMenuItem(
-                            value: i + 1,
-                            child: SizedBox(
-                              width: 120,
-                              child: Text(
-                                bulanLabels[i],
-                                textAlign: TextAlign.center,
-                                softWrap: false,
-                              ),
-                            ),
-                          ),
-                      ],
-                      icon: const Icon(Icons.expand_more),
+                    child: Builder(
+                      builder: (context) => InkWell(
+                        onTap: () => _showMonthMenu(context, bulanLabels),
+                        borderRadius: BorderRadius.circular(10),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                          child: Icon(Icons.expand_more),
+                        ),
+                      ),
                     ),
                   ),
                 _SelectChip(
                   icon: Icons.event_outlined,
                   label: '$_tahun',
-                  child: PopupMenuButton<int>(
-                    tooltip: 'Pilih tahun',
-                    onSelected: (value) => setState(() => _tahun = value),
-                    constraints: const BoxConstraints(minWidth: 140),
-                    itemBuilder: (context) => [
-                      for (final y in yearOptions)
-                        PopupMenuItem(
-                          value: y,
-                          child: SizedBox(
-                            width: 120,
-                            child: Text(
-                              '$y',
-                              textAlign: TextAlign.center,
-                              softWrap: false,
-                            ),
-                          ),
-                        ),
-                    ],
-                    icon: const Icon(Icons.expand_more),
+                  child: Builder(
+                    builder: (context) => InkWell(
+                      onTap: () => _showYearMenu(context, yearOptions),
+                      borderRadius: BorderRadius.circular(10),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                        child: Icon(Icons.expand_more),
+                      ),
+                    ),
                   ),
                 ),
                 if (widget.resetAt != null)
@@ -1340,6 +1383,179 @@ class _SelectChip extends StatelessWidget {
           const SizedBox(width: 6),
           child,
         ],
+      ),
+    );
+  }
+}
+
+class _MonthGridMenu extends StatelessWidget {
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelected;
+
+  const _MonthGridMenu({
+    required this.labels,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = _dashText(context);
+    final muted = _dashMuted(context);
+    const columns = 6;
+    const chipWidth = 32.0;
+    const spacing = 6.0;
+    final gridWidth = (chipWidth * columns) + (spacing * (columns - 1));
+    return SizedBox(
+      width: gridWidth,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          runAlignment: WrapAlignment.center,
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (var i = 0; i < labels.length; i++)
+              SizedBox(
+                width: chipWidth,
+                child: InkWell(
+                  onTap: () => onSelected(i + 1),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: i + 1 == selected
+                          ? _dashAccent.withValues(alpha: 0.18)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: i + 1 == selected
+                            ? _dashAccent.withValues(alpha: 0.35)
+                            : _dashBorder(context),
+                      ),
+                    ),
+                    child: Text(
+                      labels[i],
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: i + 1 == selected ? textColor : muted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _YearGridMenu extends StatelessWidget {
+  final List<int> years;
+  final int selected;
+  final ValueChanged<int> onSelected;
+
+  const _YearGridMenu({
+    required this.years,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = _dashText(context);
+    final muted = _dashMuted(context);
+    if (years.length == 1) {
+      final year = years.first;
+      return SizedBox(
+        width: 112,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Center(
+            child: SizedBox(
+              width: 72,
+              child: InkWell(
+                onTap: () => onSelected(year),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: year == selected
+                        ? _dashAccent.withValues(alpha: 0.18)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: year == selected
+                          ? _dashAccent.withValues(alpha: 0.35)
+                          : _dashBorder(context),
+                    ),
+                  ),
+                  child: Text(
+                    '$year',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: year == selected ? textColor : muted,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    final crossAxis = years.length < 6 ? years.length : 6;
+    final chipWidth = 38.0;
+    final spacing = 5.0;
+    final gridWidth = (chipWidth * crossAxis) + (spacing * (crossAxis - 1));
+    return SizedBox(
+      width: gridWidth,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: GridView.count(
+          crossAxisCount: crossAxis,
+          mainAxisSpacing: spacing,
+          crossAxisSpacing: spacing,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: 2.4,
+          children: [
+            for (final year in years)
+              InkWell(
+                onTap: () => onSelected(year),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: year == selected
+                        ? _dashAccent.withValues(alpha: 0.18)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: year == selected
+                          ? _dashAccent.withValues(alpha: 0.35)
+                          : _dashBorder(context),
+                    ),
+                  ),
+                  child: Text(
+                    '$year',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: year == selected ? textColor : muted,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

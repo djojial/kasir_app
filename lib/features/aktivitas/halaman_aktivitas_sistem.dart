@@ -370,6 +370,36 @@ class _AktivitasSistemBodyState extends State<_AktivitasSistemBody> {
     }).toList();
   }
 
+  Future<void> _showMonthMenu(BuildContext context) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final box = context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        box.localToGlobal(Offset.zero, ancestor: overlay),
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
+    );
+
+    final selected = await showMenu<int>(
+      context: context,
+      position: position,
+      items: [
+        PopupMenuItem<int>(
+          padding: EdgeInsets.zero,
+          child: _MonthGridMenu(
+            labels: _bulan,
+            selected: _selectedMonth,
+            onSelected: (value) => Navigator.pop(context, value),
+          ),
+        ),
+      ],
+    );
+    if (selected != null && mounted) {
+      setState(() => _selectedMonth = selected);
+    }
+  }
+
   Future<void> _exportPdf(List<Map<String, dynamic>> logs) async {
     if (_exporting) return;
     setState(() => _exporting = true);
@@ -523,8 +553,9 @@ class _AktivitasSistemBodyState extends State<_AktivitasSistemBody> {
 
   @override
   Widget build(BuildContext context) {
+    final isNarrow = MediaQuery.of(context).size.width < 520;
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isNarrow ? 16 : 24),
       child: StreamBuilder<List<Map<String, dynamic>>>(
         stream: firestore.streamActivityLogs(),
         builder: (context, snap) {
@@ -547,6 +578,69 @@ class _AktivitasSistemBodyState extends State<_AktivitasSistemBody> {
             });
           final filtered = _filterMonthly(logs);
 
+          final monthPicker = Builder(
+            builder: (context) => InkWell(
+              onTap: () => _showMonthMenu(context),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .outline
+                        .withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _bulan[_selectedMonth - 1],
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.expand_more, size: 18),
+                  ],
+                ),
+              ),
+            ),
+          );
+          final exportButton = TextButton.icon(
+            onPressed: _exporting ? null : () => _exportPdf(filtered),
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: Text(_exporting ? 'Menyiapkan...' : 'Export'),
+          );
+          final countBadge = Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 4,
+            ),
+            decoration: BoxDecoration(
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '${filtered.length} aktivitas',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+
           return HoverCard(
             child: Container(
               padding: const EdgeInsets.all(16),
@@ -554,58 +648,41 @@ class _AktivitasSistemBodyState extends State<_AktivitasSistemBody> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Aktivitas Sistem',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const Spacer(),
-                      DropdownButton<int>(
-                        value: _selectedMonth,
-                        underline: const SizedBox.shrink(),
-                        items: List.generate(
-                          12,
-                          (i) => DropdownMenuItem(
-                            value: i + 1,
-                            child: Text(_bulan[i]),
-                          ),
+                  if (isNarrow)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Aktivitas Sistem',
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setState(() => _selectedMonth = value);
-                        },
-                      ),
-                      const SizedBox(width: 12),
-                      TextButton.icon(
-                        onPressed:
-                            _exporting ? null : () => _exportPdf(filtered),
-                        icon: const Icon(Icons.picture_as_pdf_outlined),
-                        label: Text(_exporting ? 'Menyiapkan...' : 'Export'),
-                      ),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          children: [
+                            monthPicker,
+                            exportButton,
+                            countBadge,
+                          ],
                         ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(999),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Text(
+                          'Aktivitas Sistem',
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
-                        child: Text(
-                          '${filtered.length} aktivitas',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                        const Spacer(),
+                        monthPicker,
+                        const SizedBox(width: 12),
+                        exportButton,
+                        const SizedBox(width: 12),
+                        countBadge,
+                      ],
+                    ),
                   const SizedBox(height: 12),
                   if (filtered.isEmpty)
                     const SizedBox(
@@ -633,6 +710,73 @@ class _ActivityTable extends StatefulWidget {
 
   @override
   State<_ActivityTable> createState() => _ActivityTableState();
+}
+
+class _MonthGridMenu extends StatelessWidget {
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelected;
+
+  const _MonthGridMenu({
+    required this.labels,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const columns = 6;
+    const chipWidth = 32.0;
+    const spacing = 6.0;
+    final gridWidth = (chipWidth * columns) + (spacing * (columns - 1));
+    return SizedBox(
+      width: gridWidth,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          runAlignment: WrapAlignment.center,
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (var i = 0; i < labels.length; i++)
+              SizedBox(
+                width: chipWidth,
+                child: InkWell(
+                  onTap: () => onSelected(i + 1),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: i + 1 == selected
+                          ? scheme.primary.withValues(alpha: 0.15)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: i + 1 == selected
+                            ? scheme.primary.withValues(alpha: 0.4)
+                            : scheme.outline.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Text(
+                      labels[i],
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: i + 1 == selected
+                            ? scheme.onSurface
+                            : scheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ActivityTableState extends State<_ActivityTable> {

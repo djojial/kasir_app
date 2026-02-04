@@ -33,13 +33,13 @@ class HoverCard extends StatelessWidget {
     super.key,
     required this.child,
     this.borderRadius = const BorderRadius.all(Radius.circular(18)),
-    this.hoverScale = 1.02,
-    this.pressedScale = 0.98,
-    this.duration = const Duration(milliseconds: 180),
-    this.curve = Curves.easeOut,
+    this.hoverScale = 1.06,
+    this.pressedScale = 0.97,
+    this.duration = const Duration(milliseconds: 280),
+    this.curve = Curves.easeOutExpo,
     this.shadowColor = const Color(0x22000000),
     this.shadowBlur = 16,
-    this.shadowBlurHover = 24,
+    this.shadowBlurHover = 32,
     this.shadowOffset = const Offset(0, 10),
     this.onTap,
   });
@@ -72,13 +72,13 @@ class HoverButton extends StatefulWidget {
     super.key,
     required this.child,
     this.enabled = true,
-    this.hoverScale = 1.02,
-    this.pressedScale = 0.98,
-    this.duration = const Duration(milliseconds: 160),
-    this.curve = Curves.easeOut,
+    this.hoverScale = 1.06,
+    this.pressedScale = 0.97,
+    this.duration = const Duration(milliseconds: 280),
+    this.curve = Curves.easeOutExpo,
     this.shadowColor = const Color(0x22000000),
     this.shadowBlur = 10,
-    this.shadowBlurHover = 16,
+    this.shadowBlurHover = 26,
     this.shadowOffset = const Offset(0, 8),
   });
 
@@ -240,8 +240,8 @@ class _FocusTextFieldState extends State<FocusTextField> {
         : scheme.primary;
     final showGlow = _focusNode.hasFocus || hasError;
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutExpo,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         boxShadow: showGlow
