@@ -449,8 +449,8 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       await savePdfBytesWeb(bytes, filename);
       return;
     }
-    final isMobile = defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
+    final isAndroid = defaultTargetPlatform == TargetPlatform.android;
+    final isMobile = isAndroid || defaultTargetPlatform == TargetPlatform.iOS;
     final savedPath = await savePdfToDownloads(bytes, filename);
     if (!mounted) return;
     if (savedPath == null) {
@@ -462,14 +462,18 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         );
         await Share.shareXFiles([xfile], text: 'Simpan PDF laporan');
         if (!mounted) return;
-        _snack('Pilih Bagikan untuk menyimpan PDF', Colors.orange);
+        _snack('Pilih Bagikan > Simpan ke File', Colors.orange);
         return;
       }
       _snack('Gagal menyimpan otomatis', Colors.red);
       return;
     }
     _snack(
-      isMobile ? 'PDF tersimpan di penyimpanan aplikasi' : 'PDF tersimpan di Downloads',
+      isMobile
+          ? (isAndroid
+              ? 'PDF tersimpan di Downloads'
+              : 'PDF tersimpan di penyimpanan aplikasi')
+          : 'PDF tersimpan di Downloads',
       Colors.green,
     );
   }

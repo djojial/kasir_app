@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:esc_pos_bluetooth/esc_pos_bluetooth.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart';
@@ -799,7 +800,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
   }) async {
     const namaToko = 'ATk Wahyu Jaya';
     final namaKasir = await _resolveNamaKasir();
-    const logoText = 'NIRA POS';
     final subtotal = _subtotalItems(transaksi.items);
     final diskonItems = _diskonItems(transaksi.items);
     final invoiceId = _formatInvoice(transaksi.id);
@@ -810,89 +810,106 @@ class _HalamanPOSState extends State<HalamanPOS> {
         '${tanggal.hour.toString().padLeft(2, '0')}:${tanggal.minute.toString().padLeft(2, '0')}';
     final doc = pw.Document();
     final accent = PdfColor.fromInt(0xFFF28C28);
+    pw.MemoryImage? logoImage;
+    try {
+      final bytes = await rootBundle.load('image/nira_posbaru.png');
+      logoImage = pw.MemoryImage(bytes.buffer.asUint8List());
+    } catch (_) {}
     List<pw.Widget> buildContent(pw.Context context) {
-      final muted = pw.TextStyle(
-        fontSize: 9,
-        color: PdfColors.grey600,
-      );
+      final muted = pw.TextStyle(fontSize: 9, color: PdfColors.grey600);
       final titleStyle = pw.TextStyle(
         fontWeight: pw.FontWeight.bold,
         fontSize: 15,
         color: accent,
       );
-      final storeStyle = pw.TextStyle(
-        fontWeight: pw.FontWeight.bold,
-        fontSize: 12,
-      );
-      final totalStyle = pw.TextStyle(
-        fontWeight: pw.FontWeight.bold,
-        fontSize: 12,
-      );
+      final storeStyle = pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12);
+      final totalStyle = pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12);
+      final logoWidget = logoImage == null
+          ? pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Container(
+                  width: 18,
+                  height: 18,
+                  decoration: pw.BoxDecoration(
+                    borderRadius: pw.BorderRadius.circular(4),
+                    border: pw.Border.all(width: 1, color: accent),
+                  ),
+                  child: pw.Center(
+                    child: pw.Text(
+                      'C',
+                      style: pw.TextStyle(fontSize: 10, color: accent),
+                    ),
+                  ),
+                ),
+                pw.SizedBox(width: 6),
+                pw.Text('NIRA POS', style: titleStyle),
+              ],
+            )
+          : pw.Center(
+              child: pw.Image(logoImage, width: 140),
+            );
       final body = <pw.Widget>[
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.center,
-          children: [
-            pw.Container(
-              width: 18,
-              height: 18,
-              decoration: pw.BoxDecoration(
-                borderRadius: pw.BorderRadius.circular(4),
-                border: pw.Border.all(width: 1, color: accent),
-              ),
-              child: pw.Center(
-                child: pw.Text('C',
-                    style: pw.TextStyle(fontSize: 10, color: accent)),
-              ),
-            ),
-            pw.SizedBox(width: 6),
-            pw.Text(logoText, style: titleStyle),
-          ],
-        ),
-        pw.SizedBox(height: 6),
+        pw.Center(child: logoWidget),
+        pw.SizedBox(height: 8),
         pw.Center(child: pw.Text(namaToko, style: storeStyle)),
-        pw.SizedBox(height: 6),
+        pw.SizedBox(height: 8),
         pw.Center(child: pw.Text('Tiket $invoiceId', style: muted)),
         pw.Center(child: pw.Text('$tanggalStr, $jamStr', style: muted)),
         pw.Center(child: pw.Text('Dilayani oleh: $namaKasir', style: muted)),
         pw.SizedBox(height: 14),
-        ...transaksi.items.expand((item) {
+        ...transaksi.items.map((item) {
           final produk = item.produk;
           final totalItem = _itemTotal(item);
           final harga = _itemHarga(item);
-          return [
-            pw.Row(
+          return pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 6),
+            child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.SizedBox(
-                  width: 16,
+                pw.Row(
+                  children: [
+                    pw.SizedBox(
+                      width: 20,
+                      child: pw.Text(
+                        item.qty.toString(),
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Text(
+                        produk.nama,
+                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                      ),
+                    ),
+                    pw.Text(_formatRupiah(totalItem)),
+                  ],
+                ),
+                pw.SizedBox(height: 2),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(left: 20),
                   child: pw.Text(
-                    item.qty.toString(),
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                    '${_formatRupiah(harga)} / Unit',
+                    style: muted,
                   ),
                 ),
-                pw.Expanded(
-                  child: pw.Text(
-                    produk.nama,
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                  ),
-                ),
-                pw.Text(_formatRupiah(totalItem)),
               ],
             ),
-            pw.Padding(
-              padding: const pw.EdgeInsets.only(left: 16, top: 2, bottom: 10),
-              child: pw.Text(
-                '${_formatRupiah(harga)} / Unit',
-                style: muted,
-              ),
-            ),
-          ];
+          );
         }),
+        pw.SizedBox(height: 8),
         _pdfRow('Subtotal', subtotal),
-        if (diskonItems > 0) _pdfRow('Diskon Barang', diskonItems),
-        if (payment.discount > 0)
+        if (diskonItems > 0) ...[
+          pw.SizedBox(height: 4),
+          _pdfRow('Diskon Barang', diskonItems),
+        ],
+        if (payment.discount > 0) ...[
+          pw.SizedBox(height: 4),
           _pdfRow('Diskon Tambahan', payment.discount),
+        ],
+        pw.SizedBox(height: 4),
         _pdfRow('Total', payment.total, bold: true, style: totalStyle),
+        pw.SizedBox(height: 4),
         _pdfRow('Kembalian', payment.change),
       ];
       if (!cardStyle) {
@@ -901,8 +918,12 @@ class _HalamanPOSState extends State<HalamanPOS> {
       return [
         pw.Center(
           child: pw.Container(
-            width: 260,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            width: 320,
+            padding: const pw.EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.grey300),
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: body,
@@ -914,7 +935,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
 
     doc.addPage(
       pw.MultiPage(
-        pageFormat: pageFormat ?? PdfPageFormat.roll80,
+        pageFormat: pageFormat ?? PdfPageFormat.a4,
         margin: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         build: buildContent,
       ),
@@ -967,14 +988,14 @@ class _HalamanPOSState extends State<HalamanPOS> {
       return;
     }
 
-    final isMobile = defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
+    final isAndroid = defaultTargetPlatform == TargetPlatform.android;
+    final isMobile = isAndroid || defaultTargetPlatform == TargetPlatform.iOS;
     try {
       final doc = await _buildReceiptPdf(
         transaksi: transaksi,
         payment: payment,
         pageFormat: PdfPageFormat.a4,
-        cardStyle: false,
+        cardStyle: true,
       );
       final bytes = await doc.save();
       final filename = '${_formatInvoice(transaksi.id)}.pdf';
@@ -982,7 +1003,12 @@ class _HalamanPOSState extends State<HalamanPOS> {
         final savedPath = await savePdfToDownloads(bytes, filename);
         if (savedPath != null) {
           if (!mounted) return;
-          _snack('PDF tersimpan di penyimpanan aplikasi', Colors.green);
+          _snack(
+            isAndroid
+                ? 'PDF tersimpan di Downloads'
+                : 'PDF tersimpan di penyimpanan aplikasi',
+            Colors.green,
+          );
           return;
         }
         final xfile = XFile.fromData(
@@ -992,7 +1018,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
         );
         await Share.shareXFiles([xfile], text: 'Simpan PDF struk');
         if (!mounted) return;
-        _snack('Pilih Bagikan untuk menyimpan PDF', Colors.orange);
+        _snack('Pilih Bagikan > Simpan ke File', Colors.orange);
         return;
       }
 
@@ -1063,7 +1089,8 @@ class _HalamanPOSState extends State<HalamanPOS> {
       final doc = await _buildReceiptPdf(
         transaksi: transaksi,
         payment: payment,
-        pageFormat: kIsWeb ? PdfPageFormat.a4 : null,
+        // Gunakan ukuran standar agar preview WhatsApp tidak blank.
+        pageFormat: PdfPageFormat.a4,
         cardStyle: true,
       );
       final bytes = await doc.save();

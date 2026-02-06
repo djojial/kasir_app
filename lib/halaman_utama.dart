@@ -134,7 +134,7 @@ class _HalamanUtamaState extends State<HalamanUtama> {
       items.add(const _NavItem(
         page: _PageKey.stok,
         icon: Icons.inventory_2_outlined,
-        label: 'Stok',
+        label: 'Manajemen Stok',
       ));
     }
     if (pages['laporan'] == true) {
@@ -171,7 +171,7 @@ class _HalamanUtamaState extends State<HalamanUtama> {
       subtitle: 'Ringkasan performa operasional',
     ),
     _PageKey.stok: _HeaderInfo(
-      title: 'Stok',
+      title: 'Manajemen Stok',
       subtitle: 'Kelola stok, harga, dan status produk',
     ),
     _PageKey.laporan: _HeaderInfo(

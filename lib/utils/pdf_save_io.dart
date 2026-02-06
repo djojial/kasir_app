@@ -2,17 +2,23 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 
 Future<String?> savePdfToDownloadsImpl(Uint8List bytes, String filename) async {
-  Directory? baseDir = await getDownloadsDirectory();
-  if (baseDir == null && Platform.isAndroid) {
-    final dirs = await getExternalStorageDirectories(
-      type: StorageDirectory.downloads,
-    );
-    if (dirs != null && dirs.isNotEmpty) {
-      baseDir = dirs.first;
+  if (Platform.isAndroid) {
+    try {
+      const channel = MethodChannel('kasir_app/media_store');
+      final uri = await channel.invokeMethod<String>('saveToDownloads', {
+        'bytes': bytes,
+        'filename': filename,
+        'mimeType': 'application/pdf',
+      });
+      return uri;
+    } catch (_) {
+      return null;
     }
   }
+  Directory? baseDir = await getDownloadsDirectory();
   baseDir ??= await getApplicationDocumentsDirectory();
   if (baseDir.path.isEmpty) {
     return null;
