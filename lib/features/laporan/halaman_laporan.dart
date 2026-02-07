@@ -17,6 +17,26 @@ import '../../database/services/firestore_service.dart';
 import '../../utils/pdf_download.dart';
 import '../../utils/pdf_save.dart';
 
+String _activityUsernameOnly(dynamic raw) {
+  final text = (raw ?? '').toString().trim();
+  if (text.isEmpty) return '';
+  final atIndex = text.indexOf('@');
+  if (atIndex > 0) {
+    return text.substring(0, atIndex);
+  }
+  return text;
+}
+
+String _activityActorLabel(Map<String, dynamic> log) {
+  final name = _activityUsernameOnly(log['actor_name']);
+  if (name.isNotEmpty) return name;
+  final emailName = _activityUsernameOnly(log['actor_email']);
+  if (emailName.isNotEmpty) return emailName;
+  final uid = (log['actor_uid'] ?? '').toString().trim();
+  if (uid.isNotEmpty) return uid;
+  return '-';
+}
+
 class HalamanLaporan extends StatefulWidget {
   const HalamanLaporan({super.key});
 
@@ -243,23 +263,17 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
         final tipe = (log['tipe'] ?? '').toString().toLowerCase();
         final kategori = (info?.kategori ?? 'Lainnya').toString();
         final barcode = (info?.barcode ?? '-').toString();
-        final actorName = (log['actor_name'] ??
-                log['actor_email'] ??
-                log['actor_uid'] ??
-                '-')
-            .toString();
+        final actorName = _activityActorLabel(log);
         final invoiceRaw = log['refId'] ?? log['transaksiId'];
-        final invoice = sumber == 'pos' && invoiceRaw != null
-            ? invoiceRaw.toString()
-            : '-';
+        final invoice =
+            sumber == 'pos' && invoiceRaw != null ? invoiceRaw.toString() : '-';
         final isHarga = tipe == 'harga';
         final labelPerubahan =
             isHarga ? '-' : (perubahan >= 0 ? '+$perubahan' : '$perubahan');
         final qty = isHarga ? 0 : perubahan.abs();
         final modalRaw = log['harga_modal'];
         final jualRaw = log['harga_jual'];
-        final hasPrice =
-            modalRaw is int || jualRaw is int || info != null;
+        final hasPrice = modalRaw is int || jualRaw is int || info != null;
         final modal = modalRaw is int ? modalRaw : (info?.hargaModal ?? 0);
         final jual = jualRaw is int ? jualRaw : (info?.hargaJual ?? 0);
         final labaUnit = jual - modal;
@@ -581,7 +595,6 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
     }
   }
 
-
   String _buildAktivitasStokDetail(Map<String, dynamic> log) {
     final sumber = (log['sumber'] ?? '').toString().toLowerCase();
     final tipe = (log['tipe'] ?? '').toString().toLowerCase();
@@ -622,8 +635,7 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
     } else if (sumber == 'pos') {
       base = 'Penjualan';
       detail = qty == 0 ? '' : '-$qty';
-    } else if (sumber == 'edit' &&
-        catatan.toLowerCase() == 'hapus produk') {
+    } else if (sumber == 'edit' && catatan.toLowerCase() == 'hapus produk') {
       base = 'Hapus produk';
       detail = qty == 0 ? '' : '-$qty';
     } else if (sumber == 'edit') {
@@ -631,7 +643,8 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
       detail = qty == 0 ? '' : (perubahan >= 0 ? '+$qty' : '-$qty');
     } else {
       base = _labelSumber(sumber);
-      detail = qty == 0 ? _labelTipe(tipe) : (perubahan >= 0 ? '+$qty' : '-$qty');
+      detail =
+          qty == 0 ? _labelTipe(tipe) : (perubahan >= 0 ? '+$qty' : '-$qty');
     }
 
     final parts = <String>[base];
@@ -646,9 +659,6 @@ class _HalamanLaporanState extends State<HalamanLaporan> {
     }
     return parts.join(' | ');
   }
-
-
-
 }
 
 class _FilterBar extends StatelessWidget {
@@ -738,27 +748,27 @@ class _FilterBar extends StatelessWidget {
               boxShadow: _luxShadow(context),
             ),
             child: isNarrow
-              ? Column(
-                  children: [
-                    tanggalField,
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: filterControl,
-                    ),
-                    const SizedBox(height: 12),
-                    exportButton,
-                  ],
-                )
-              : Row(
-                  children: [
-                    Expanded(child: tanggalField),
-                    const SizedBox(width: 16),
-                    filterControl,
-                    const SizedBox(width: 16),
-                    exportButton,
-                  ],
-                ),
+                ? Column(
+                    children: [
+                      tanggalField,
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: filterControl,
+                      ),
+                      const SizedBox(height: 12),
+                      exportButton,
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(child: tanggalField),
+                      const SizedBox(width: 16),
+                      filterControl,
+                      const SizedBox(width: 16),
+                      exportButton,
+                    ],
+                  ),
           ),
         );
       },
@@ -820,8 +830,7 @@ class _DropdownFilter extends StatelessWidget {
                   Text(
                     o.label,
                     style: TextStyle(
-                      fontWeight:
-                          isActive ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                     ),
                   ),
                   const Spacer(),
@@ -1043,86 +1052,84 @@ class _RingkasanTab extends StatelessWidget {
             final maxDays = 30;
             final totalDays = rangeEnd.difference(rangeStart).inDays + 1;
             final daysCount = totalDays > maxDays ? maxDays : totalDays;
-            final tagLabel = rentang == null
-                ? '30 hari'
-                : '${daysCount} hari';
+            final tagLabel = rentang == null ? '30 hari' : '${daysCount} hari';
 
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final width = constraints.maxWidth;
-              final isNarrow = width < 720;
-              final isTight = width < 520;
-              final gap = 16.0;
-              final cardWidth = isTight ? width : (width - gap) / 2;
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final isNarrow = width < 720;
+                final isTight = width < 520;
+                final gap = 16.0;
+                final cardWidth = isTight ? width : (width - gap) / 2;
 
-              final cards = [
-                _RingkasanCard(
-                  title: 'Total Produk',
-                  value: totalProduk.toString(),
-                  icon: Icons.inventory_2_outlined,
-                  color: const Color(0xFFF28C28),
-                ),
-                _RingkasanCard(
-                  title: 'Total Stok',
-                  value: totalStok.toString(),
-                  icon: Icons.stacked_bar_chart_outlined,
-                  color: const Color(0xFFC76A1F),
-                ),
-                _RingkasanCard(
-                  title: 'Stok Masuk',
-                  value: totalMasuk.toString(),
-                  icon: Icons.south_west,
-                  color: const Color(0xFFE7A354),
-                ),
-                _RingkasanCard(
-                  title: 'Stok Keluar',
-                  value: totalKeluar.toString(),
-                  icon: Icons.north_east,
-                  color: const Color(0xFFF2B05A),
-                ),
-              ];
-
-              final content = Column(
-                children: [
-                  if (isNarrow)
-                    Wrap(
-                      spacing: gap,
-                      runSpacing: gap,
-                      children: [
-                        for (final card in cards)
-                          SizedBox(width: cardWidth, child: card),
-                      ],
-                    )
-                  else
-                    Row(
-                      children: [
-                        Expanded(child: cards[0]),
-                        const SizedBox(width: 16),
-                        Expanded(child: cards[1]),
-                        const SizedBox(width: 16),
-                        Expanded(child: cards[2]),
-                        const SizedBox(width: 16),
-                        Expanded(child: cards[3]),
-                      ],
-                    ),
-                  const SizedBox(height: 16),
-                  _ChartCard(
-                    title: 'Detail Log Stok',
-                    tag: tagLabel,
-                    child: _LogTable(
-                      logs: logs,
-                      produkMap: produkMap,
-                    ),
+                final cards = [
+                  _RingkasanCard(
+                    title: 'Total Produk',
+                    value: totalProduk.toString(),
+                    icon: Icons.inventory_2_outlined,
+                    color: const Color(0xFFF28C28),
                   ),
-                ],
-              );
+                  _RingkasanCard(
+                    title: 'Total Stok',
+                    value: totalStok.toString(),
+                    icon: Icons.stacked_bar_chart_outlined,
+                    color: const Color(0xFFC76A1F),
+                  ),
+                  _RingkasanCard(
+                    title: 'Stok Masuk',
+                    value: totalMasuk.toString(),
+                    icon: Icons.south_west,
+                    color: const Color(0xFFE7A354),
+                  ),
+                  _RingkasanCard(
+                    title: 'Stok Keluar',
+                    value: totalKeluar.toString(),
+                    icon: Icons.north_east,
+                    color: const Color(0xFFF2B05A),
+                  ),
+                ];
 
-              if (wrapInScroll) {
-                return SingleChildScrollView(child: content);
-              }
-              return content;
-            },
-          );
+                final content = Column(
+                  children: [
+                    if (isNarrow)
+                      Wrap(
+                        spacing: gap,
+                        runSpacing: gap,
+                        children: [
+                          for (final card in cards)
+                            SizedBox(width: cardWidth, child: card),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(child: cards[0]),
+                          const SizedBox(width: 16),
+                          Expanded(child: cards[1]),
+                          const SizedBox(width: 16),
+                          Expanded(child: cards[2]),
+                          const SizedBox(width: 16),
+                          Expanded(child: cards[3]),
+                        ],
+                      ),
+                    const SizedBox(height: 16),
+                    _ChartCard(
+                      title: 'Detail Log Stok',
+                      tag: tagLabel,
+                      child: _LogTable(
+                        logs: logs,
+                        produkMap: produkMap,
+                      ),
+                    ),
+                  ],
+                );
+
+                if (wrapInScroll) {
+                  return SingleChildScrollView(child: content);
+                }
+                return content;
+              },
+            );
           },
         );
       },
@@ -1193,6 +1200,10 @@ class _ActivityTab extends StatelessWidget {
         return 'Ubah harga';
       case 'transaksi':
         return 'Transaksi';
+      case 'login':
+        return 'Login';
+      case 'logout':
+        return 'Logout';
       case 'user_create':
         return 'Buat user';
       case 'user_update_role':
@@ -1305,11 +1316,7 @@ class _ActivityTab extends StatelessWidget {
                             final log = logs[index];
                             final action =
                                 _labelAksi((log['action'] ?? '').toString());
-                            final actorName =
-                                (log['actor_name'] ??
-                                        log['actor_email'] ??
-                                        '-')
-                                    .toString();
+                            final actorName = _activityActorLabel(log);
                             final time = _formatDateTime(
                               log['created_at'] as Timestamp?,
                             );
@@ -1466,8 +1473,7 @@ class _LogTableState extends State<_LogTable> {
     } else if (sumber == 'pos') {
       base = 'Penjualan';
       detail = qty == 0 ? '' : '-$qty';
-    } else if (sumber == 'edit' &&
-        catatan.toLowerCase() == 'hapus produk') {
+    } else if (sumber == 'edit' && catatan.toLowerCase() == 'hapus produk') {
       base = 'Hapus produk';
       detail = qty == 0 ? '' : '-$qty';
     } else if (sumber == 'edit') {
@@ -1475,7 +1481,8 @@ class _LogTableState extends State<_LogTable> {
       detail = qty == 0 ? '' : (perubahan >= 0 ? '+$qty' : '-$qty');
     } else {
       base = _labelSumber(sumber);
-      detail = qty == 0 ? _labelTipe(tipe) : (perubahan >= 0 ? '+$qty' : '-$qty');
+      detail =
+          qty == 0 ? _labelTipe(tipe) : (perubahan >= 0 ? '+$qty' : '-$qty');
     }
 
     final parts = <String>[base];
@@ -1544,8 +1551,7 @@ class _LogTableState extends State<_LogTable> {
       ),
       child: DefaultTextStyle(
         style: TextStyle(
-          color:
-              Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
           fontSize: 13,
         ),
         textAlign: align,
@@ -1608,10 +1614,8 @@ class _LogTableState extends State<_LogTable> {
         child: Text(
           'Belum ada data log pada rentang ini',
           style: TextStyle(
-            color: Theme.of(context)
-                .colorScheme
-                .onSurface
-                .withValues(alpha: 0.6),
+            color:
+                Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
           ),
         ),
       );
@@ -1700,10 +1704,12 @@ class _LogTableState extends State<_LogTable> {
                     _row(
                       context: context,
                       cells: const [
-                        Text('No', style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('No',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Tanggal',
                             style: TextStyle(fontWeight: FontWeight.w700)),
-                        Text('User', style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text('User',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Invoice',
                             style: TextStyle(fontWeight: FontWeight.w700)),
                         Text('Produk',
@@ -1737,8 +1743,7 @@ class _LogTableState extends State<_LogTable> {
                       final no = entry.key + 1;
                       final log = entry.value;
                       final ts = log['waktu'];
-                      final dt =
-                          ts is Timestamp ? ts.toDate() : DateTime(1970);
+                      final dt = ts is Timestamp ? ts.toDate() : DateTime(1970);
                       final id = log['produk_id'];
                       final namaProduk = log['nama_produk'];
                       final info = id is String
@@ -1754,8 +1759,7 @@ class _LogTableState extends State<_LogTable> {
                       final stokAkhir = (log['stok_akhir'] ?? 0) as int;
                       final sumber =
                           (log['sumber'] ?? '').toString().toLowerCase();
-                      final tipe =
-                          (log['tipe'] ?? '').toString().toLowerCase();
+                      final tipe = (log['tipe'] ?? '').toString().toLowerCase();
                       final invoiceRaw = log['refId'] ?? log['transaksiId'];
                       final invoice = sumber == 'pos' && invoiceRaw != null
                           ? invoiceRaw.toString()
@@ -1784,14 +1788,11 @@ class _LogTableState extends State<_LogTable> {
                       final perubahanColor = perubahan >= 0
                           ? const Color(0xFF2A9D6F)
                           : const Color(0xFFD06C64);
-                      final actorName = (log['actor_name'] ??
-                              log['actor_email'] ??
-                              log['actor_uid'] ??
-                              '-')
-                          .toString();
+                      final actorName = _activityActorLabel(log);
                       final aktivitas = _buildAktivitasStokDetail(log);
                       return MouseRegion(
-                        onEnter: (_) => setState(() => _hoveredIndex = entry.key),
+                        onEnter: (_) =>
+                            setState(() => _hoveredIndex = entry.key),
                         onExit: (_) => setState(() => _hoveredIndex = null),
                         child: _row(
                           context: context,
@@ -1951,6 +1952,10 @@ class _MergedTimeline extends StatelessWidget {
         return 'Ubah harga';
       case 'transaksi':
         return 'Transaksi';
+      case 'login':
+        return 'Login';
+      case 'logout':
+        return 'Logout';
       case 'user_create':
         return 'Buat user';
       case 'user_update_role':
@@ -2045,8 +2050,7 @@ class _MergedTimeline extends StatelessWidget {
     final merged = <Map<String, dynamic>>[
       for (final log in logs) {'kind': 'stok', 'data': log},
       for (final log in activityLogs) {'kind': 'aktivitas', 'data': log},
-    ]
-      ..sort((a, b) => _resolveTime(b).compareTo(_resolveTime(a)));
+    ]..sort((a, b) => _resolveTime(b).compareTo(_resolveTime(a)));
 
     if (merged.isEmpty) {
       return const SizedBox(
@@ -2068,8 +2072,7 @@ class _MergedTimeline extends StatelessWidget {
         final scheme = Theme.of(context).colorScheme;
 
         if (kind == 'aktivitas' && data is Map<String, dynamic>) {
-          final action =
-              _labelAksiActivity((data['action'] ?? '').toString());
+          final action = _labelAksiActivity((data['action'] ?? '').toString());
           final category = _labelKategoriActivity(
             (data['category'] ?? '').toString().toLowerCase(),
           );
@@ -2100,8 +2103,7 @@ class _MergedTimeline extends StatelessWidget {
                       detail,
                       style: TextStyle(
                         fontSize: 12,
-                        color:
-                            scheme.onSurface.withValues(alpha: 0.65),
+                        color: scheme.onSurface.withValues(alpha: 0.65),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -2109,8 +2111,7 @@ class _MergedTimeline extends StatelessWidget {
                       '$category • $time',
                       style: TextStyle(
                         fontSize: 11,
-                        color:
-                            scheme.onSurface.withValues(alpha: 0.5),
+                        color: scheme.onSurface.withValues(alpha: 0.5),
                       ),
                     ),
                   ],
@@ -2228,14 +2229,16 @@ class _RingkasanCard extends StatelessWidget {
           builder: (context, constraints) {
             final isTight = constraints.maxWidth < 140;
             final info = Column(
-              crossAxisAlignment:
-                  isTight ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+              crossAxisAlignment: isTight
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.start,
               children: [
                 Wrap(
                   spacing: 8,
                   runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
-                  alignment: isTight ? WrapAlignment.center : WrapAlignment.start,
+                  alignment:
+                      isTight ? WrapAlignment.center : WrapAlignment.start,
                   children: [
                     Text(
                       title,
@@ -2245,8 +2248,8 @@ class _RingkasanCard extends StatelessWidget {
                       ),
                     ),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: scheme.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(999),
@@ -2275,8 +2278,7 @@ class _RingkasanCard extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: 0.65,
                     minHeight: 6,
-                    backgroundColor:
-                        scheme.onSurface.withValues(alpha: 0.08),
+                    backgroundColor: scheme.onSurface.withValues(alpha: 0.08),
                     color: color,
                   ),
                 ),
@@ -2351,38 +2353,39 @@ class _ChartCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          Row(
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  tag,
+            Row(
+              children: [
+                Text(
+                  title,
                   style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          child,
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    tag,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
           ],
         ),
       ),

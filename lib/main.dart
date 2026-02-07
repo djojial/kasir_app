@@ -9,6 +9,7 @@ import 'firebase_options.dart';
 import 'package:kasir_app/halaman_utama.dart';
 import 'features/auth/halaman_login.dart';
 import 'core/theme_controller.dart';
+import 'database/services/auth_activity_service.dart';
 import 'database/services/firestore_service.dart';
 import 'core/app_scaffold.dart';
 
@@ -18,6 +19,8 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  unawaited(AuthActivityService.instance.logAutoLoginOnAppStart());
 
   runApp(const MyApp());
 }
@@ -284,7 +287,8 @@ class _MyAppState extends State<MyApp> {
       chipTheme: const ChipThemeData(
         backgroundColor: Color(0xFF202020),
         selectedColor: Color(0xFF2E2B24),
-        labelStyle: TextStyle(color: Color(0xFFEAE6DD), fontWeight: FontWeight.w600),
+        labelStyle:
+            TextStyle(color: Color(0xFFEAE6DD), fontWeight: FontWeight.w600),
         secondaryLabelStyle: TextStyle(color: Color(0xFFEAE6DD)),
         shape: StadiumBorder(),
         side: BorderSide(color: darkBorder),

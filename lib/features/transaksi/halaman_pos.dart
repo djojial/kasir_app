@@ -146,6 +146,12 @@ class _HalamanPOSState extends State<HalamanPOS> {
 
   int _itemSubtotal(TransaksiItem item) => _itemHarga(item) * item.qty;
 
+  int _itemModal(TransaksiItem item) {
+    final modal = item.produk.hargaModal;
+    if (modal <= 0) return 0;
+    return modal * item.qty;
+  }
+
   int _itemTotal(TransaksiItem item) {
     final subtotal = _itemSubtotal(item);
     final diskon = _itemDiskon(item);
@@ -162,15 +168,24 @@ class _HalamanPOSState extends State<HalamanPOS> {
       );
 
   int get totalBayar => subtotalBayar - diskonBayar;
+  int get totalQtyBayar => keranjang.fold(0, (sum, item) => sum + item.qty);
+
+  int get totalModalBayar =>
+      keranjang.fold(0, (sum, item) => sum + _itemModal(item));
+
+  int get batasDiskonTambahan {
+    final batas = totalBayar - totalModalBayar;
+    return batas > 0 ? batas : 0;
+  }
 
   int _subtotalItems(List<TransaksiItem> items) =>
       items.fold(0, (sum, item) => sum + _itemSubtotal(item));
 
   int _diskonItems(List<TransaksiItem> items) =>
-      items.fold(0, (sum, item) => sum + (_itemSubtotal(item) - _itemTotal(item)));
-
-  int _totalItems(List<TransaksiItem> items) =>
-      _subtotalItems(items) - _diskonItems(items);
+      items.fold(
+        0,
+        (sum, item) => sum + (_itemSubtotal(item) - _itemTotal(item)),
+      );
 
   // =========================
   // PROSES BAYAR
@@ -245,6 +260,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
         total: payment.total,
         items: List.from(keranjang),
       );
+      final invoiceId = _formatInvoice(transaksi.id);
 
       await firestore.simpanTransaksi(transaksi);
       final actor = await _resolveActor();
@@ -252,10 +268,12 @@ class _HalamanPOSState extends State<HalamanPOS> {
         action: 'transaksi',
         category: 'transaksi',
         targetId: transaksi.id,
-        targetLabel: transaksi.id,
+        targetLabel: invoiceId,
         meta: {
           'total': payment.total,
-          'items': keranjang.length,
+          'items': totalQtyBayar,
+          'transaksi_id': transaksi.id,
+          'invoice': invoiceId,
         },
         actor: actor,
       );
@@ -299,6 +317,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
 
     final paidController = TextEditingController(text: '');
     final discountController = TextEditingController(text: '');
+    final maxDiskonTambahan = batasDiskonTambahan;
     try {
       final result = await showModalBottomSheet<_PaymentResult>(
         context: context,
@@ -311,15 +330,17 @@ class _HalamanPOSState extends State<HalamanPOS> {
           int totalAfterDiscount = totalBayar;
           int change = paidAmount - totalAfterDiscount;
           bool editingDiscount = false;
-          bool invalidDiscount = false;
 
           return StatefulBuilder(
             builder: (context, setModalState) {
               void recalcTotals() {
                 final parsedPaid = _parseAngkaText(paidController.text);
                 var parsedDiskon = _parseAngkaText(discountController.text);
-                invalidDiscount =
-                    totalBayar > 0 && parsedDiskon >= totalBayar;
+                if (parsedDiskon > maxDiskonTambahan) {
+                  parsedDiskon = maxDiskonTambahan;
+                  discountController.text =
+                      _formatAngkaText(parsedDiskon.toString());
+                }
                 final updatedTotal = totalBayar - parsedDiskon;
                 setModalState(() {
                   paidAmount = parsedPaid;
@@ -396,17 +417,15 @@ class _HalamanPOSState extends State<HalamanPOS> {
                                 prefixIcon: Icon(Icons.discount_outlined),
                               ),
                             ),
-                            if (invalidDiscount) ...[
-                              const SizedBox(height: 6),
-                              const Text(
-                                'Harap Sesuaikan Nominal Diskon',
-                                style: TextStyle(
-                                  color: Color(0xFFE84C3D),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Maks diskon tambahan: ${_formatRupiah(maxDiskonTambahan)}',
+                              style: const TextStyle(
+                                color: Color(0xFF9CA3AF),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
                               ),
-                            ],
+                            ),
                             if (method == 'Cash') ...[
                               const SizedBox(height: 12),
                               Expanded(
@@ -507,13 +526,6 @@ class _HalamanPOSState extends State<HalamanPOS> {
                                         if (method == 'Cash' &&
                                             paidAmount < totalAfterDiscount) {
                                           _snack('Uang belum cukup', Colors.orange);
-                                          return;
-                                        }
-                                        if (invalidDiscount) {
-                                          _snack(
-                                            'Harap Sesuaikan Nominal Diskon',
-                                            Colors.orange,
-                                          );
                                           return;
                                         }
                                         final finalPaid = method == 'Cash'
@@ -1440,7 +1452,7 @@ class _HalamanPOSState extends State<HalamanPOS> {
                             backgroundColor: _posAccent,
                             foregroundColor: Colors.black,
                             icon: const Icon(Icons.shopping_bag_outlined),
-                            label: Text('${keranjang.length} item'),
+                            label: Text('$totalQtyBayar item'),
                           ),
                         ),
                     ],
@@ -2227,6 +2239,7 @@ class _TransaksiTable extends StatelessWidget {
                   },
                 );
 
+          final totalQty = items.fold(0, (sum, item) => sum + item.qty);
           final listSection = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2241,15 +2254,18 @@ class _TransaksiTable extends StatelessWidget {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: _posAccent.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '${items.length} item',
-                      style: TextStyle(color: text, fontSize: isNarrow ? 11 : 12),
+                      '$totalQty item',
+                      style: TextStyle(
+                        color: text,
+                        fontSize: isNarrow ? 11 : 12,
+                      ),
                     ),
                   ),
                 ],

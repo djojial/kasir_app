@@ -59,6 +59,10 @@ String _activityLabelAksi(String value) {
       return 'Ubah diskon grosir';
     case 'transaksi':
       return 'Transaksi';
+    case 'login':
+      return 'Login';
+    case 'logout':
+      return 'Logout';
     case 'user_create':
       return 'Buat user';
     case 'user_update_role':
@@ -82,6 +86,26 @@ String _activityLabelAksi(String value) {
     default:
       return value.isEmpty ? '-' : value;
   }
+}
+
+String _activityUsernameOnly(dynamic raw) {
+  final text = (raw ?? '').toString().trim();
+  if (text.isEmpty) return '';
+  final atIndex = text.indexOf('@');
+  if (atIndex > 0) {
+    return text.substring(0, atIndex);
+  }
+  return text;
+}
+
+String _activityActorLabel(Map<String, dynamic> log) {
+  final name = _activityUsernameOnly(log['actor_name']);
+  if (name.isNotEmpty) return name;
+  final emailName = _activityUsernameOnly(log['actor_email']);
+  if (emailName.isNotEmpty) return emailName;
+  final uid = (log['actor_uid'] ?? '').toString().trim();
+  if (uid.isNotEmpty) return uid;
+  return '-';
 }
 
 String _activityBuildDetail(Map<String, dynamic> log) {
@@ -117,10 +141,49 @@ String _activityBuildDetail(Map<String, dynamic> log) {
   return parts.isEmpty ? '-' : parts.join(', ');
 }
 
+String? _activityInvoiceFromTimestampId(String rawId) {
+  final id = rawId.trim();
+  final millis = int.tryParse(id);
+  if (millis == null || id.length < 11) return null;
+  try {
+    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
+    final date =
+        '${dt.year}${dt.month.toString().padLeft(2, '0')}${dt.day.toString().padLeft(2, '0')}';
+    final tail = id.length > 4 ? id.substring(id.length - 4) : id;
+    return 'INV-$date-$tail';
+  } catch (_) {
+    return null;
+  }
+}
+
 String _activityResolveDetailId(Map<String, dynamic> log) {
+  final action = (log['action'] ?? '').toString();
+  final targetLabel = (log['target_label'] ?? '').toString().trim();
   final targetId = (log['target_id'] ?? '').toString().trim();
-  if (targetId.isNotEmpty) return targetId;
   final meta = log['meta'];
+
+  if (action == 'transaksi') {
+    if (targetLabel.isNotEmpty) {
+      if (targetLabel.toUpperCase().startsWith('INV-')) return targetLabel;
+      final invoiceFromLabel = _activityInvoiceFromTimestampId(targetLabel);
+      if (invoiceFromLabel != null) return invoiceFromLabel;
+      return targetLabel;
+    }
+    if (meta is Map) {
+      final invoiceMeta = (meta['invoice'] ?? '').toString().trim();
+      if (invoiceMeta.isNotEmpty) return invoiceMeta;
+      final transaksiIdMeta = (meta['transaksi_id'] ?? '').toString().trim();
+      final invoiceFromMeta = _activityInvoiceFromTimestampId(transaksiIdMeta);
+      if (invoiceFromMeta != null) return invoiceFromMeta;
+    }
+    if (targetId.isNotEmpty) {
+      final invoiceFromTargetId = _activityInvoiceFromTimestampId(targetId);
+      if (invoiceFromTargetId != null) return invoiceFromTargetId;
+      return targetId;
+    }
+  }
+
+  if (targetId.isNotEmpty) return targetId;
   if (meta is Map) {
     for (final key in ['transaksi_id', 'invoice', 'ref_id', 'id']) {
       final val = meta[key];
@@ -156,7 +219,9 @@ String _activityBuildKeterangan(Map<String, dynamic> log) {
           meta['stok_baru'] != null) {
         return 'Mengubah stok $targetLabel dari ${meta['stok_lama']} ke ${meta['stok_baru']}';
       }
-      return targetLabel.isEmpty ? 'Mengubah stok' : 'Mengubah stok $targetLabel';
+      return targetLabel.isEmpty
+          ? 'Mengubah stok'
+          : 'Mengubah stok $targetLabel';
     case 'harga_ubah':
       if (meta is Map) {
         final parts = <String>['Mengubah harga'];
@@ -219,8 +284,8 @@ String _activityBuildKeterangan(Map<String, dynamic> log) {
           ? 'Mengubah diskon grosir'
           : 'Mengubah diskon grosir $targetLabel';
     case 'role_default_update':
-      final role =
-          (meta is Map ? (meta['role'] ?? targetLabel) : targetLabel).toString();
+      final role = (meta is Map ? (meta['role'] ?? targetLabel) : targetLabel)
+          .toString();
       return 'Mengubah default role ${_activityRoleLabel(role)}';
     case 'user_create':
       final role = meta is Map ? (meta['role'] ?? '') : '';
@@ -250,7 +315,9 @@ String _activityBuildKeterangan(Map<String, dynamic> log) {
       }
       return 'Mengubah nama $targetLabel';
     case 'user_delete':
-      return targetLabel.isEmpty ? 'Menghapus user' : 'Menghapus user $targetLabel';
+      return targetLabel.isEmpty
+          ? 'Menghapus user'
+          : 'Menghapus user $targetLabel';
     case 'user_disable':
       return targetLabel.isEmpty
           ? 'Menonaktifkan user'
@@ -263,6 +330,20 @@ String _activityBuildKeterangan(Map<String, dynamic> log) {
       return targetLabel.isEmpty
           ? 'Reset password'
           : 'Reset password untuk $targetLabel';
+    case 'login':
+      final source = meta is Map ? (meta['source'] ?? '').toString() : '';
+      if (source == 'auto_session') {
+        return targetLabel.isEmpty
+            ? 'Masuk aplikasi (sesi tersimpan)'
+            : 'Masuk aplikasi (sesi tersimpan) $targetLabel';
+      }
+      return targetLabel.isEmpty
+          ? 'Login aplikasi'
+          : 'Login aplikasi $targetLabel';
+    case 'logout':
+      return targetLabel.isEmpty
+          ? 'Logout aplikasi'
+          : 'Logout aplikasi $targetLabel';
     case 'transaksi':
       if (meta is Map) {
         final total = meta['total'];
@@ -274,9 +355,11 @@ String _activityBuildKeterangan(Map<String, dynamic> log) {
         final diskonPersen = meta['diskon_persen'] ??
             meta['diskon_percent'] ??
             meta['discount_percent'];
-        final totalText = total is int ? _activityFormatRupiahSimple(total) : null;
+        final totalText =
+            total is int ? _activityFormatRupiahSimple(total) : null;
         final itemsText = items != null ? '$items item' : null;
-        final diskonText = diskon is int ? _activityFormatRupiahSimple(diskon) : null;
+        final diskonText =
+            diskon is int ? _activityFormatRupiahSimple(diskon) : null;
         final diskonPersenText = diskonPersen != null ? '$diskonPersen%' : null;
         final parts = <String>[
           if (targetLabel.isNotEmpty) 'Transaksi $targetLabel' else 'Transaksi',
@@ -424,11 +507,7 @@ class _AktivitasSistemBodyState extends State<_AktivitasSistemBody> {
         final dt = ts is Timestamp ? ts.toDate() : DateTime(1970);
         final waktu =
             '${dt.day.toString().padLeft(2, '0')} ${_bulan[dt.month - 1]} ${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-        final user = (log['actor_name'] ??
-                log['actor_email'] ??
-                log['actor_uid'] ??
-                '-')
-            .toString();
+        final user = _activityActorLabel(log);
         final mode = (log['action'] ?? '-').toString();
         final keterangan = _activityBuildKeterangan(log);
         final detail = _activityResolveDetailId(log);
@@ -827,6 +906,10 @@ class _ActivityTableState extends State<_ActivityTable> {
         return 'Ubah harga';
       case 'transaksi':
         return 'Transaksi';
+      case 'login':
+        return 'Login';
+      case 'logout':
+        return 'Logout';
       case 'user_create':
         return 'Buat user';
       case 'user_update_role':
@@ -1004,9 +1087,8 @@ class _ActivityTableState extends State<_ActivityTable> {
             ? 'Mengubah diskon grosir'
             : 'Mengubah diskon grosir $targetLabel';
       case 'role_default_update':
-        final role =
-            (meta is Map ? (meta['role'] ?? targetLabel) : targetLabel)
-                .toString();
+        final role = (meta is Map ? (meta['role'] ?? targetLabel) : targetLabel)
+            .toString();
         return 'Mengubah default role ${_roleLabel(role)}';
       case 'user_create':
         final role = meta is Map ? (meta['role'] ?? '') : '';
@@ -1036,7 +1118,9 @@ class _ActivityTableState extends State<_ActivityTable> {
         }
         return 'Mengubah nama $targetLabel';
       case 'user_delete':
-        return targetLabel.isEmpty ? 'Menghapus user' : 'Menghapus user $targetLabel';
+        return targetLabel.isEmpty
+            ? 'Menghapus user'
+            : 'Menghapus user $targetLabel';
       case 'user_disable':
         return targetLabel.isEmpty
             ? 'Menonaktifkan user'
@@ -1049,6 +1133,20 @@ class _ActivityTableState extends State<_ActivityTable> {
         return targetLabel.isEmpty
             ? 'Reset password'
             : 'Reset password untuk $targetLabel';
+      case 'login':
+        final source = meta is Map ? (meta['source'] ?? '').toString() : '';
+        if (source == 'auto_session') {
+          return targetLabel.isEmpty
+              ? 'Masuk aplikasi (sesi tersimpan)'
+              : 'Masuk aplikasi (sesi tersimpan) $targetLabel';
+        }
+        return targetLabel.isEmpty
+            ? 'Login aplikasi'
+            : 'Login aplikasi $targetLabel';
+      case 'logout':
+        return targetLabel.isEmpty
+            ? 'Logout aplikasi'
+            : 'Logout aplikasi $targetLabel';
       case 'transaksi':
         if (meta is Map) {
           final total = meta['total'];
@@ -1066,7 +1164,10 @@ class _ActivityTableState extends State<_ActivityTable> {
           final diskonPersenText =
               diskonPersen != null ? '$diskonPersen%' : null;
           final parts = <String>[
-            if (targetLabel.isNotEmpty) 'Transaksi $targetLabel' else 'Transaksi',
+            if (targetLabel.isNotEmpty)
+              'Transaksi $targetLabel'
+            else
+              'Transaksi',
             if (totalText != null) 'total $totalText',
             if (itemsText != null) itemsText,
             if (diskonText != null) 'diskon $diskonText',
@@ -1112,18 +1213,7 @@ class _ActivityTableState extends State<_ActivityTable> {
   }
 
   String _resolveDetailId(Map<String, dynamic> log) {
-    final targetId = (log['target_id'] ?? '').toString().trim();
-    if (targetId.isNotEmpty) return targetId;
-    final meta = log['meta'];
-    if (meta is Map) {
-      for (final key in ['transaksi_id', 'invoice', 'ref_id', 'id']) {
-        final val = meta[key];
-        if (val != null && val.toString().trim().isNotEmpty) {
-          return val.toString();
-        }
-      }
-    }
-    return '-';
+    return _activityResolveDetailId(log);
   }
 
   Widget _cell({
@@ -1185,20 +1275,20 @@ class _ActivityTableState extends State<_ActivityTable> {
       ),
       child: ClipRect(
         child: Row(
-        children: List.generate(cells.length, (index) {
-          final isLastCell = index == cells.length - 1;
-          final cell = _cell(
-            width: isLastCell ? null : widths[index],
-            child: cells[index],
-            context: context,
-            isLast: isLastCell,
-            isFirst: index == 0,
-          );
-          if (isLastCell) {
-            return Expanded(child: cell);
-          }
-          return cell;
-        }),
+          children: List.generate(cells.length, (index) {
+            final isLastCell = index == cells.length - 1;
+            final cell = _cell(
+              width: isLastCell ? null : widths[index],
+              child: cells[index],
+              context: context,
+              isLast: isLastCell,
+              isFirst: index == 0,
+            );
+            if (isLastCell) {
+              return Expanded(child: cell);
+            }
+            return cell;
+          }),
         ),
       ),
     );
@@ -1290,12 +1380,9 @@ class _ActivityTableState extends State<_ActivityTable> {
                       ...filteredLogs.asMap().entries.map((entry) {
                         final log = entry.value;
                         final ts = log['created_at'] ?? log['waktu'];
-                        final dt = ts is Timestamp ? ts.toDate() : DateTime(1970);
-                        final actorName = (log['actor_name'] ??
-                                log['actor_email'] ??
-                                log['actor_uid'] ??
-                                '-')
-                            .toString();
+                        final dt =
+                            ts is Timestamp ? ts.toDate() : DateTime(1970);
+                        final actorName = _activityActorLabel(log);
                         final actionRaw = (log['action'] ?? '').toString();
                         final keterangan = _buildKeterangan(log);
                         final detailId = _resolveDetailId(log);

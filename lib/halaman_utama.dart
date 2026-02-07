@@ -11,6 +11,7 @@ import 'features/aktivitas/halaman_aktivitas_sistem.dart';
 import 'features/users/halaman_user.dart';
 
 import 'database/services/firestore_service.dart';
+import 'database/services/auth_activity_service.dart';
 import 'database/models/transaksi_model.dart';
 import 'database/models/produk_model.dart';
 import 'core/theme_controller.dart';
@@ -246,6 +247,10 @@ class _HalamanUtamaState extends State<HalamanUtama> {
     setState(() => halamanAktif = index);
   }
 
+  Future<void> _logout() async {
+    await AuthActivityService.instance.signOutWithActivity(source: 'manual');
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -258,8 +263,7 @@ class _HalamanUtamaState extends State<HalamanUtama> {
         return StreamBuilder<Map<String, dynamic>?>(
           stream: firestore.streamRoleAccessConfig(),
           builder: (context, accessSnap) {
-            final access =
-                _resolveAccess(accessSnap.data, profileSnap.data);
+            final access = _resolveAccess(accessSnap.data, profileSnap.data);
             final items = _navItemsFor(access);
             _cachedNavItems = items;
             if (items.isEmpty) {
@@ -273,7 +277,8 @@ class _HalamanUtamaState extends State<HalamanUtama> {
               });
             }
             final activePage = items[halamanAktif].page;
-            final header = _headerInfo[activePage] ?? _headerInfo[_PageKey.pos]!;
+            final header =
+                _headerInfo[activePage] ?? _headerInfo[_PageKey.pos]!;
             return LayoutBuilder(
               builder: (context, constraints) {
                 final isMobile = constraints.maxWidth < _mobileBreakpoint;
@@ -299,7 +304,7 @@ class _HalamanUtamaState extends State<HalamanUtama> {
                         IconButton(
                           tooltip: 'Logout',
                           onPressed: () async {
-                            await FirebaseAuth.instance.signOut();
+                            await _logout();
                           },
                           icon: const Icon(Icons.logout, color: _dashAccent),
                         ),
@@ -521,9 +526,11 @@ class _Sidebar extends StatelessWidget {
     final text = _dashText(context);
     final muted = _dashMuted(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final itemBgSelected = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF6F1E8);
+    final itemBgSelected =
+        isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF6F1E8);
     final itemBg = isDark ? const Color(0xFF242424) : const Color(0xFFF9F6F0);
-    final iconBgSelected = isDark ? const Color(0xFF3A3222) : const Color(0xFFF3E7C8);
+    final iconBgSelected =
+        isDark ? const Color(0xFF3A3222) : const Color(0xFFF3E7C8);
     return Container(
       width: 220,
       decoration: BoxDecoration(
@@ -560,7 +567,8 @@ class _Sidebar extends StatelessWidget {
                   onTap: () => onSelected(index),
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 12),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
                     decoration: BoxDecoration(
                       color: selected ? itemBgSelected : Colors.transparent,
                       borderRadius: BorderRadius.circular(18),
@@ -637,6 +645,10 @@ class _TopBarState extends State<_TopBar> {
   late DateTime _now;
   Timer? _timer;
   final FirestoreService _firestore = FirestoreService();
+
+  Future<void> _logout() async {
+    await AuthActivityService.instance.signOutWithActivity(source: 'manual');
+  }
 
   Stream<User?> _authStream() {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
@@ -811,7 +823,9 @@ class _TopBarState extends State<_TopBar> {
                       ? nickname
                       : (name != null && name.trim().isNotEmpty)
                           ? name.trim()
-                          : (email.isNotEmpty ? email.split('@').first : 'User');
+                          : (email.isNotEmpty
+                              ? email.split('@').first
+                              : 'User');
                   return buildUserChip(label);
                 },
               );
@@ -835,7 +849,7 @@ class _TopBarState extends State<_TopBar> {
                     IconButton(
                       tooltip: 'Logout',
                       onPressed: () async {
-                        await FirebaseAuth.instance.signOut();
+                        await _logout();
                       },
                       icon: const Icon(Icons.logout, color: _dashAccent),
                     ),
@@ -883,7 +897,7 @@ class _TopBarState extends State<_TopBar> {
                       IconButton(
                         tooltip: 'Logout',
                         onPressed: () async {
-                          await FirebaseAuth.instance.signOut();
+                          await _logout();
                         },
                         icon: const Icon(Icons.logout, color: _dashAccent),
                       ),
@@ -1110,9 +1124,8 @@ class _SummaryRowState extends State<_SummaryRow> {
                 .toSet()
                 .toList()
               ..sort((a, b) => b.compareTo(a));
-            final yearOptions = years.isNotEmpty
-                ? years
-                : <int>[DateTime.now().year];
+            final yearOptions =
+                years.isNotEmpty ? years : <int>[DateTime.now().year];
             if (!yearOptions.contains(_tahun)) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
@@ -1172,7 +1185,8 @@ class _SummaryRowState extends State<_SummaryRow> {
                         onTap: () => _showMonthMenu(context, bulanLabels),
                         borderRadius: BorderRadius.circular(10),
                         child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                           child: Icon(Icons.expand_more),
                         ),
                       ),
@@ -1186,7 +1200,8 @@ class _SummaryRowState extends State<_SummaryRow> {
                       onTap: () => _showYearMenu(context, yearOptions),
                       borderRadius: BorderRadius.circular(10),
                       child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                         child: Icon(Icons.expand_more),
                       ),
                     ),
@@ -1210,10 +1225,10 @@ class _SummaryRowState extends State<_SummaryRow> {
             );
             final filtered = list.where((t) {
               final dt = t.tanggal;
-              final start = widget.resetAt != null &&
-                      widget.resetAt!.isAfter(range.start)
-                  ? widget.resetAt!
-                  : range.start;
+              final start =
+                  widget.resetAt != null && widget.resetAt!.isAfter(range.start)
+                      ? widget.resetAt!
+                      : range.start;
               return !dt.isBefore(start) && dt.isBefore(range.end);
             }).toList();
             final totalTransaksi = filtered.length;
@@ -1584,46 +1599,46 @@ class _SummaryCard extends StatelessWidget {
         decoration: _panelDecoration(context),
         child: Row(
           children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: accent.withValues(alpha: 0.4)),
-              boxShadow: [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.25),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Icon(icon, color: accent),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: _dashMuted(context),
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: accent.withValues(alpha: 0.4)),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.25),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: valueColor,
-                  ),
-                ),
-              ],
+                ],
+              ),
+              child: Icon(icon, color: accent),
             ),
-          ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: _dashMuted(context),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: valueColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -1709,8 +1724,7 @@ class _RekapStokCardState extends State<_RekapStokCard> {
           return waktu.isAtSameMomentAs(start) ||
               (waktu.isAfter(start) && waktu.isBefore(end));
         }).length;
-        final label =
-            '${start.hour.toString().padLeft(2, '0')}.00';
+        final label = '${start.hour.toString().padLeft(2, '0')}.00';
         points.add(_SalesChartPoint(label: label, transaksi: count));
       }
       return points;
@@ -1737,7 +1751,8 @@ class _RekapStokCardState extends State<_RekapStokCard> {
     final points = <_SalesChartPoint>[];
     for (var i = bucketCount - 1; i >= 0; i--) {
       final dayDate = now.subtract(Duration(days: i));
-      final count = transaksi.where((t) => _isSameDay(t.tanggal, dayDate)).length;
+      final count =
+          transaksi.where((t) => _isSameDay(t.tanggal, dayDate)).length;
       points.add(
         _SalesChartPoint(
           label: '${dayDate.day} ${_monthShort(dayDate.month)}',
@@ -1759,80 +1774,80 @@ class _RekapStokCardState extends State<_RekapStokCard> {
         decoration: _panelDecoration(context),
         child: LayoutBuilder(
           builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 720;
-          final chips = Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _RangeChip(
-                label: 'Hari ini',
-                selected: _range == _RekapRange.hari,
-                onTap: () => setState(() => _range = _RekapRange.hari),
-              ),
-              _RangeChip(
-                label: 'Bulan ini',
-                selected: _range == _RekapRange.bulan,
-                onTap: () => setState(() => _range = _RekapRange.bulan),
-              ),
-              _RangeChip(
-                label: 'Tahun ini',
-                selected: _range == _RekapRange.tahun,
-                onTap: () => setState(() => _range = _RekapRange.tahun),
-              ),
-            ],
-          );
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (isNarrow) ...[
-                const Text(
-                  'Rekap Transaksi',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+            final isNarrow = constraints.maxWidth < 720;
+            final chips = Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _RangeChip(
+                  label: 'Hari ini',
+                  selected: _range == _RekapRange.hari,
+                  onTap: () => setState(() => _range = _RekapRange.hari),
                 ),
-                const SizedBox(height: 4),
-                Text(rangeLabel, style: const TextStyle(fontSize: 12)),
-                const SizedBox(height: 12),
-                chips,
-              ] else
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Rekap Transaksi',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 4),
-                          Text(rangeLabel,
-                              style: const TextStyle(fontSize: 12)),
-                        ],
+                _RangeChip(
+                  label: 'Bulan ini',
+                  selected: _range == _RekapRange.bulan,
+                  onTap: () => setState(() => _range = _RekapRange.bulan),
+                ),
+                _RangeChip(
+                  label: 'Tahun ini',
+                  selected: _range == _RekapRange.tahun,
+                  onTap: () => setState(() => _range = _RekapRange.tahun),
+                ),
+              ],
+            );
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isNarrow) ...[
+                  const Text(
+                    'Rekap Transaksi',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(rangeLabel, style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 12),
+                  chips,
+                ] else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Rekap Transaksi',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 4),
+                            Text(rangeLabel,
+                                style: const TextStyle(fontSize: 12)),
+                          ],
+                        ),
                       ),
-                    ),
-                    chips,
-                  ],
+                      chips,
+                    ],
+                  ),
+                const SizedBox(height: 16),
+                StreamBuilder<List<Transaksi>>(
+                  stream: firestore.streamSemuaTransaksi(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const SizedBox(
+                        height: 200,
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    final data = snapshot.data ?? const <Transaksi>[];
+                    final filtered = widget.resetAt == null
+                        ? data
+                        : data
+                            .where((t) => !t.tanggal.isBefore(widget.resetAt!))
+                            .toList();
+                    final points = _buildChartData(filtered, _range, now);
+                    return _StockChart(data: points);
+                  },
                 ),
-              const SizedBox(height: 16),
-              StreamBuilder<List<Transaksi>>(
-                stream: firestore.streamSemuaTransaksi(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const SizedBox(
-                      height: 200,
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  final data = snapshot.data ?? const <Transaksi>[];
-                  final filtered = widget.resetAt == null
-                      ? data
-                      : data
-                          .where((t) => !t.tanggal.isBefore(widget.resetAt!))
-                          .toList();
-                  final points = _buildChartData(filtered, _range, now);
-                  return _StockChart(data: points);
-                },
-              ),
-            ],
-          );
+              ],
+            );
           },
         ),
       ),
@@ -2081,7 +2096,7 @@ class _TransaksiTerbaruCard extends StatelessWidget {
                 return Column(
                   children: filtered.take(3).map((t) {
                     return _TransaksiItemTile(
-                      nama: t.id,
+                      nama: _formatInvoiceLabel(t.id, t.tanggal),
                       deskripsi: '${t.jenis} - ${t.items.length} item',
                       total: 'Rp ${t.total}',
                       waktu: _formatJam(t.tanggal),
@@ -2141,10 +2156,8 @@ class _TransaksiItemTile extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: Theme.of(context)
-                  .colorScheme
-                  .primary
-                  .withValues(alpha: 0.15),
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
@@ -2209,15 +2222,17 @@ class _LowStockCard extends StatelessWidget {
             final lowCount = produk.where((p) => p.stok < 10).length;
             final hasLow = lowCount > 0;
             final scheme = Theme.of(context).colorScheme;
-            final iconColor =
-                hasLow ? scheme.primary : scheme.onSurface.withValues(alpha: 0.5);
+            final iconColor = hasLow
+                ? scheme.primary
+                : scheme.onSurface.withValues(alpha: 0.5);
             return Row(
               children: [
                 Container(
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: hasLow ? 0.12 : 0.06),
+                    color:
+                        scheme.primary.withValues(alpha: hasLow ? 0.12 : 0.06),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Theme.of(context).dividerColor),
                   ),
@@ -2311,9 +2326,7 @@ class _SalesLineChart extends StatelessWidget {
         final transaksiRaw = snapshot.data ?? const <Transaksi>[];
         final transaksi = resetAt == null
             ? transaksiRaw
-            : transaksiRaw
-                .where((t) => !t.tanggal.isBefore(resetAt!))
-                .toList();
+            : transaksiRaw.where((t) => !t.tanggal.isBefore(resetAt!)).toList();
         final values = <int>[];
         var total = 0;
         for (var i = 29; i >= 0; i--) {
@@ -2332,7 +2345,8 @@ class _SalesLineChart extends StatelessWidget {
             painter: _LineChartPainter(values: values, color: scheme.primary),
             child: Container(
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F0EB),
+                color:
+                    isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F0EB),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: Theme.of(context).dividerColor),
               ),
@@ -2380,7 +2394,8 @@ class _LineChartPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final safeHeight = size.height - 12;
-    final maxValue = values.isEmpty ? 0 : values.reduce((a, b) => a > b ? a : b);
+    final maxValue =
+        values.isEmpty ? 0 : values.reduce((a, b) => a > b ? a : b);
     final points = <Offset>[];
     final denom = values.length > 1 ? values.length - 1 : 1;
     for (var i = 0; i < values.length; i++) {
@@ -2434,6 +2449,13 @@ String _formatJam(DateTime tanggal) {
   return '$jam:$menit';
 }
 
+String _formatInvoiceLabel(String id, DateTime tanggal) {
+  final date =
+      '${tanggal.year}${tanggal.month.toString().padLeft(2, '0')}${tanggal.day.toString().padLeft(2, '0')}';
+  final tail = id.length > 4 ? id.substring(id.length - 4) : id;
+  return 'INV-$date-$tail';
+}
+
 String _formatRupiahSimple(int value) {
   final buffer = StringBuffer();
   final str = value.abs().toString();
@@ -2445,4 +2467,3 @@ String _formatRupiahSimple(int value) {
   final prefix = value < 0 ? '-Rp ' : 'Rp ';
   return '$prefix${buffer.toString()}';
 }
-

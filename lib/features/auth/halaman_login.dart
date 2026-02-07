@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/ui/app_feedback.dart';
 import '../../core/ui/interactive_widgets.dart';
 import '../../core/theme_controller.dart';
+import '../../database/services/auth_activity_service.dart';
+
 class HalamanLogin extends StatefulWidget {
   const HalamanLogin({super.key});
 
@@ -96,8 +100,7 @@ class _HalamanLoginState extends State<HalamanLogin> {
           .limit(1)
           .get();
       final data = snap.docs.isEmpty ? null : snap.docs.first.data();
-      final role =
-          (data?['role'] ?? '').toString().trim().toLowerCase();
+      final role = (data?['role'] ?? '').toString().trim().toLowerCase();
       AppFeedback.hideLoading();
 
       if (role.isEmpty) {
@@ -109,7 +112,8 @@ class _HalamanLoginState extends State<HalamanLogin> {
         return;
       }
 
-      AppFeedback.showLoading(rootContext, message: 'Mengirim reset password...');
+      AppFeedback.showLoading(rootContext,
+          message: 'Mengirim reset password...');
       await FirebaseAuth.instance.sendPasswordResetEmail(email: safeEmail);
       if (!mounted) return;
       AppFeedback.show(
@@ -202,10 +206,12 @@ class _HalamanLoginState extends State<HalamanLogin> {
     });
 
     try {
+      AuthActivityService.instance.markManualLoginStarted();
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+      unawaited(AuthActivityService.instance.logLogin(source: 'manual'));
       if (mounted) {
         setState(() {
           _statusSuccess = true;
@@ -245,7 +251,8 @@ class _HalamanLoginState extends State<HalamanLogin> {
             _error = 'Format email tidak valid.';
             break;
           case 'too-many-requests':
-            _error = 'Permintaan dari perangkat ini diblokir sementara. Coba lagi nanti.';
+            _error =
+                'Permintaan dari perangkat ini diblokir sementara. Coba lagi nanti.';
             break;
           case 'user-disabled':
             _error = 'Akun dinonaktifkan.';
@@ -486,7 +493,8 @@ class _HalamanLoginState extends State<HalamanLogin> {
                                 ? const SizedBox(
                                     height: 18,
                                     width: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   )
                                 : const Text('Masuk'),
                           ),
