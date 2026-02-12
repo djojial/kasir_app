@@ -19,7 +19,7 @@ jobs:
         with:
           flutter-version: 3.32.8
           channel: stable
-          cache: true
+          cache: false
 
       - name: Show commit and scanner versions
         run: |
@@ -78,6 +78,7 @@ jobs:
       - name: Install CocoaPods
         run: |
           cd ios
+          rm -rf .symlinks Pods Podfile.lock
           pod install --repo-update 2>&1 | tee ../pod-install.log
 
       - name: Build iOS (no codesign)
