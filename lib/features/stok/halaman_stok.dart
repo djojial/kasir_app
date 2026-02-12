@@ -325,7 +325,7 @@ class _HalamanStokState extends State<HalamanStok> {
                           }
 
                           return MobileScanner(
-                            errorBuilder: (context, error, child) {
+                            errorBuilder: (context, error) {
                               return Center(
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),

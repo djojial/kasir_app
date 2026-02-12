@@ -16,7 +16,7 @@ dependencies:
   cloud_firestore: ^6.1.2
 
   # 📱 Fitur tambahan
-  mobile_scanner: ^4.0.1
+  mobile_scanner: ^7.1.4
   simple_barcode_scanner: ^0.3.0
   google_sign_in: ^6.2.1
   http: ^1.2.2

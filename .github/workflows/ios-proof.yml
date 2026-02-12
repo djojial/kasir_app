@@ -6,6 +6,9 @@ on:
 jobs:
   build-ios:
     runs-on: macos-latest
+    env:
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
 
     steps:
       - name: Checkout
@@ -60,13 +63,17 @@ jobs:
       - name: Install CocoaPods
         run: |
           cd ios
-          pod install --repo-update
+          pod install --repo-update 2>&1 | tee ../pod-install.log
 
       - name: Build iOS (no codesign)
-        run: flutter build ios --release --no-codesign -v
+        run: flutter build ios --release --no-codesign -v 2>&1 | tee build-ios.log
 
       - name: Upload build artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-build-proof
-          path: build/ios/iphoneos
+          path: |
+            build/ios/iphoneos
+            pod-install.log
+            build-ios.log

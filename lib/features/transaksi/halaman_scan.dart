@@ -165,7 +165,7 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
                                             },
                                           )))
                                 : MobileScanner(
-                                    errorBuilder: (context, error, child) {
+                                    errorBuilder: (context, error) {
                                       return _CameraErrorPanel(
                                         error: error,
                                         onRetry: () {
