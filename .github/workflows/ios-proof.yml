@@ -21,6 +21,17 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Show commit and scanner versions
+        run: |
+          echo "Commit:"
+          git rev-parse --short HEAD
+          echo ""
+          echo "pubspec.yaml:"
+          grep -n "mobile_scanner" pubspec.yaml || true
+          echo ""
+          echo "pubspec.lock:"
+          grep -n "mobile_scanner" pubspec.lock || true
+
       - name: Show tool versions
         run: |
           xcodebuild -version
@@ -34,6 +45,10 @@ jobs:
       - name: Prepare dependencies
         run: |
           flutter pub get
+
+      - name: Verify resolved plugins
+        run: |
+          grep -n "mobile_scanner" .flutter-plugins-dependencies || true
 
       - name: Regenerate missing iOS files
         run: |
