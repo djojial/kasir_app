@@ -1,0 +1,64 @@
+name: ios-compile-proof
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.32.8
+          channel: stable
+          cache: true
+
+      - name: Show tool versions
+        run: |
+          xcodebuild -version
+          flutter --version
+          pod --version
+
+      - name: Prepare dependencies
+        run: |
+          flutter pub get
+
+      - name: Regenerate missing iOS files
+        run: |
+          flutter create --platforms=ios .
+
+      - name: Enforce iOS 15 deployment target
+        run: |
+          if grep -q "^# platform :ios" ios/Podfile; then
+            sed -i '' "s/^# platform :ios.*/platform :ios, '15.0'/" ios/Podfile
+          elif grep -q "^platform :ios" ios/Podfile; then
+            sed -i '' "s/^platform :ios.*/platform :ios, '15.0'/" ios/Podfile
+          else
+            echo "platform :ios, '15.0'" | cat - ios/Podfile > ios/Podfile.tmp
+            mv ios/Podfile.tmp ios/Podfile
+          fi
+          sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = 12.0;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g" ios/Runner.xcodeproj/project.pbxproj
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-proof
+          path: build/ios/iphoneos
