@@ -1,4 +1,8 @@
-import { BrowserMultiFormatReader } from 'https://esm.run/@zxing/library@0.20.0';
+import {
+  BrowserMultiFormatReader,
+  DecodeHintType,
+  BarcodeFormat,
+} from 'https://esm.run/@zxing/library@0.20.0';
 
 const activeScanners = new Map();
 let nextId = 1;
@@ -25,6 +29,84 @@ function waitForContainer(containerId, attempts = 20, delayMs = 50) {
   });
 }
 
+async function openPreferredCameraStream() {
+  const candidates = [
+    {
+      video: {
+        facingMode: { exact: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    },
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    },
+    {
+      video: {
+        facingMode: { ideal: 'user' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    },
+    { video: true, audio: false },
+  ];
+
+  let lastError = null;
+  for (const constraints of candidates) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error('Tidak bisa membuka kamera.');
+}
+
+function buildDecodeHints() {
+  const hints = new Map();
+  hints.set(DecodeHintType.TRY_HARDER, true);
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+    BarcodeFormat.EAN_13,
+    BarcodeFormat.EAN_8,
+    BarcodeFormat.UPC_A,
+    BarcodeFormat.UPC_E,
+    BarcodeFormat.CODE_128,
+    BarcodeFormat.CODE_39,
+    BarcodeFormat.ITF,
+    BarcodeFormat.CODABAR,
+    BarcodeFormat.QR_CODE,
+  ]);
+  return hints;
+}
+
+async function applyTrackTuning(stream) {
+  const track = stream.getVideoTracks && stream.getVideoTracks()[0];
+  if (!track || !track.applyConstraints) return;
+  try {
+    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+    const advanced = [];
+    if (
+      capabilities.focusMode &&
+      Array.isArray(capabilities.focusMode) &&
+      capabilities.focusMode.includes('continuous')
+    ) {
+      advanced.push({ focusMode: 'continuous' });
+    }
+    if (advanced.length > 0) {
+      await track.applyConstraints({ advanced });
+    }
+  } catch (_) {
+    // Ignore unsupported tuning constraints.
+  }
+}
+
 window.startWebScanner = async function startWebScanner(containerId, onScan, onError) {
   try {
     if (!window.isSecureContext) {
@@ -48,25 +130,27 @@ window.startWebScanner = async function startWebScanner(containerId, onScan, onE
     video.muted = true;
     video.style.width = '100%';
     video.style.height = '100%';
-    video.style.objectFit = 'cover';
+    // Preserve full frame so barcode edges are not cropped.
+    video.style.objectFit = 'contain';
     container.appendChild(video);
 
-    const reader = new BrowserMultiFormatReader();
+    const hints = buildDecodeHints();
+    const reader = new BrowserMultiFormatReader(hints, 200);
     const handleId = nextId++;
     activeScanners.set(handleId, { reader, video });
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' },
-      audio: false,
-    });
+    const stream = await openPreferredCameraStream();
     video.srcObject = stream;
     await video.play();
+    await applyTrackTuning(stream);
 
     reader.decodeFromVideoElementContinuously(video, (result) => {
       if (result) {
-        const text = result.getText();
-        onScan?.(text);
-        window.stopWebScanner(handleId);
+        const text = result.getText ? result.getText() : '';
+        if (text && text.trim()) {
+          onScan?.(text.trim());
+          window.stopWebScanner(handleId);
+        }
       }
     });
 

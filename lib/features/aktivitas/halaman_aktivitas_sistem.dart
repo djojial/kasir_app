@@ -83,6 +83,8 @@ String _activityLabelAksi(String value) {
       return 'Ubah default role';
     case 'user_access_override':
       return 'Akses khusus user';
+    case 'dashboard_reset':
+      return 'Reset dashboard';
     default:
       return value.isEmpty ? '-' : value;
   }
@@ -133,6 +135,9 @@ String _activityBuildDetail(Map<String, dynamic> log) {
     }
     if (meta['email_baru'] != null) {
       parts.add('Email: ${meta['email_baru']}');
+    }
+    if (meta['reset_at_label'] != null) {
+      parts.add('Reset: ${meta['reset_at_label']}');
     }
     if (meta['nama_lama'] != null && meta['nama_baru'] != null) {
       parts.add('Nama ${meta['nama_lama']} -> ${meta['nama_baru']}');
@@ -344,6 +349,13 @@ String _activityBuildKeterangan(Map<String, dynamic> log) {
       return targetLabel.isEmpty
           ? 'Logout aplikasi'
           : 'Logout aplikasi $targetLabel';
+    case 'dashboard_reset':
+      final resetAt = meta is Map
+          ? (meta['reset_at_label'] ?? meta['reset_at'] ?? '').toString().trim()
+          : '';
+      return resetAt.isEmpty
+          ? 'Mereset dashboard'
+          : 'Mereset dashboard mulai $resetAt';
     case 'transaksi':
       if (meta is Map) {
         final total = meta['total'];
@@ -930,6 +942,8 @@ class _ActivityTableState extends State<_ActivityTable> {
         return 'Ubah default role';
       case 'user_access_override':
         return 'Akses khusus user';
+      case 'dashboard_reset':
+        return 'Reset dashboard';
       default:
         return value.isEmpty ? '-' : value;
     }
@@ -988,6 +1002,9 @@ class _ActivityTableState extends State<_ActivityTable> {
       }
       if (meta['email_baru'] != null) {
         parts.add('Email: ${meta['email_baru']}');
+      }
+      if (meta['reset_at_label'] != null) {
+        parts.add('Reset: ${meta['reset_at_label']}');
       }
       if (meta['nama_lama'] != null && meta['nama_baru'] != null) {
         parts.add('Nama ${meta['nama_lama']} -> ${meta['nama_baru']}');
@@ -1147,6 +1164,15 @@ class _ActivityTableState extends State<_ActivityTable> {
         return targetLabel.isEmpty
             ? 'Logout aplikasi'
             : 'Logout aplikasi $targetLabel';
+      case 'dashboard_reset':
+        final resetAt = meta is Map
+            ? (meta['reset_at_label'] ?? meta['reset_at'] ?? '')
+                .toString()
+                .trim()
+            : '';
+        return resetAt.isEmpty
+            ? 'Mereset dashboard'
+            : 'Mereset dashboard mulai $resetAt';
       case 'transaksi':
         if (meta is Map) {
           final total = meta['total'];

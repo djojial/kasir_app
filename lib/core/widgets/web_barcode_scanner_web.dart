@@ -24,6 +24,8 @@ class _WebBarcodeScannerState extends State<WebBarcodeScanner> {
   late final String _viewType;
   late final String _containerId;
   int? _handleId;
+  dynamic _onScanInterop;
+  dynamic _onErrorInterop;
 
   @override
   void initState() {
@@ -55,24 +57,35 @@ class _WebBarcodeScannerState extends State<WebBarcodeScanner> {
     widget.onError?.call('Scanner web belum siap.');
   }
 
-  void _startScanner() {
+  Future<void> _startScanner() async {
     if (!js_util.hasProperty(html.window, 'startWebScanner')) {
       widget.onError?.call('Scanner web tidak tersedia.');
       return;
     }
-    final onScan = js.allowInterop((String code) {
+    _onScanInterop = js.allowInterop((String code) {
       widget.onDetect(code);
     });
-    final onError = js.allowInterop((String message) {
+    _onErrorInterop = js.allowInterop((String message) {
       widget.onError?.call(message);
     });
-    final handle = js_util.callMethod(
+    final handleOrPromise = js_util.callMethod(
       html.window,
       'startWebScanner',
-      [_containerId, onScan, onError],
+      [_containerId, _onScanInterop, _onErrorInterop],
     );
-    if (handle is int) {
-      _handleId = handle;
+
+    Object? resolved = handleOrPromise;
+    if (resolved != null && js_util.hasProperty(resolved, 'then')) {
+      try {
+        resolved = await js_util.promiseToFuture<Object?>(resolved);
+      } catch (_) {
+        resolved = null;
+      }
+    }
+
+    if (!mounted) return;
+    if (resolved is num && resolved >= 0) {
+      _handleId = resolved.toInt();
     }
   }
 
@@ -82,6 +95,8 @@ class _WebBarcodeScannerState extends State<WebBarcodeScanner> {
         js_util.hasProperty(html.window, 'stopWebScanner')) {
       js_util.callMethod(html.window, 'stopWebScanner', [_handleId]);
     }
+    _onScanInterop = null;
+    _onErrorInterop = null;
     super.dispose();
   }
 

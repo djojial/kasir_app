@@ -1224,6 +1224,8 @@ class _ActivityTab extends StatelessWidget {
         return 'Ubah default role';
       case 'user_access_override':
         return 'Akses khusus user';
+      case 'dashboard_reset':
+        return 'Reset dashboard';
       default:
         return value.isEmpty ? '-' : value;
     }
@@ -1254,6 +1256,9 @@ class _ActivityTab extends StatelessWidget {
       }
       if (meta['email_baru'] != null) {
         parts.add('Email: ${meta['email_baru']}');
+      }
+      if (meta['reset_at_label'] != null) {
+        parts.add('Reset: ${meta['reset_at_label']}');
       }
     }
     return parts.isEmpty ? '-' : parts.join(' · ');
@@ -1976,6 +1981,8 @@ class _MergedTimeline extends StatelessWidget {
         return 'Ubah default role';
       case 'user_access_override':
         return 'Akses khusus user';
+      case 'dashboard_reset':
+        return 'Reset dashboard';
       default:
         return value.isEmpty ? '-' : value;
     }
@@ -2010,6 +2017,8 @@ class _MergedTimeline extends StatelessWidget {
         return 'Harga';
       case 'password':
         return 'Password';
+      case 'dashboard':
+        return 'Dashboard';
       default:
         return value.isEmpty ? '-' : value;
     }
@@ -2040,6 +2049,9 @@ class _MergedTimeline extends StatelessWidget {
       }
       if (meta['email_baru'] != null) {
         parts.add('Email: ${meta['email_baru']}');
+      }
+      if (meta['reset_at_label'] != null) {
+        parts.add('Reset: ${meta['reset_at_label']}');
       }
     }
     return parts.isEmpty ? '-' : parts.join(' | ');

@@ -990,6 +990,21 @@ class _SummaryRowState extends State<_SummaryRow> {
     return '$day $month ${date.year}';
   }
 
+  Map<String, String>? _resolveActor() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+    final email = (user.email ?? '').trim().toLowerCase();
+    var name = (user.displayName ?? '').trim();
+    if (name.isEmpty && email.contains('@')) {
+      name = email.split('@').first;
+    }
+    return {
+      'uid': user.uid,
+      if (email.isNotEmpty) 'email': email,
+      if (name.isNotEmpty) 'name': name,
+    };
+  }
+
   Future<void> _showMonthMenu(BuildContext context, List<String> labels) async {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final box = context.findRenderObject() as RenderBox;
@@ -1082,7 +1097,19 @@ class _SummaryRowState extends State<_SummaryRow> {
       },
     );
     if (ok != true) return;
+    final resetAt = DateTime.now();
     await widget.firestore.setDashboardResetNow();
+    await widget.firestore.logActivity(
+      action: 'dashboard_reset',
+      category: 'dashboard',
+      targetId: 'dashboard',
+      targetLabel: 'Dashboard',
+      meta: {
+        'reset_at': resetAt.toIso8601String(),
+        'reset_at_label': _formatResetDate(resetAt),
+      },
+      actor: _resolveActor(),
+    );
     if (!mounted) return;
     AppFeedback.show(
       context,
