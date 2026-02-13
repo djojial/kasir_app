@@ -9,7 +9,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:simple_barcode_scanner/simple_barcode_scanner.dart';
 
 import '../../core/ui/app_feedback.dart';
 import '../../core/ui/interactive_widgets.dart';
@@ -82,6 +81,14 @@ class _HalamanStokState extends State<HalamanStok> {
 
     int parseAngka(String value) =>
         int.tryParse(value.replaceAll('.', '')) ?? 0;
+
+    String normalizeNama(String value) => value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ');
+
+    String normalizeBarcode(String value) =>
+        value.trim().toLowerCase();
 
     final namaC = TextEditingController(text: produk?.nama ?? '');
     final barcodeC = TextEditingController(text: produk?.barcode ?? '');
@@ -209,17 +216,29 @@ class _HalamanStokState extends State<HalamanStok> {
 
           Future<void> scanBarcode() async {
             bool handled = false;
-            final isWindowsDesktop =
-                !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
-            final canUseCamera = kIsWeb ||
+            final isDesktopPlatform =
+                !kIsWeb &&
+                (defaultTargetPlatform == TargetPlatform.windows ||
+                    defaultTargetPlatform == TargetPlatform.macOS ||
+                    defaultTargetPlatform == TargetPlatform.linux);
+            if (kIsWeb || isDesktopPlatform) {
+              if (!context.mounted) return;
+              AppFeedback.show(
+                context,
+                message: 'Harap sambungkan dengan Perankat Scan',
+                type: AppFeedbackType.info,
+              );
+              return;
+            }
+            final canUseCamera =
                 defaultTargetPlatform == TargetPlatform.android ||
-                defaultTargetPlatform == TargetPlatform.iOS;
-            if (!canUseCamera && !isWindowsDesktop) {
+                    defaultTargetPlatform == TargetPlatform.iOS;
+            if (!canUseCamera) {
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
-                    'Scan kamera hanya tersedia di Android/iOS/Web. Gunakan input manual.',
+                    'Scan kamera hanya tersedia di Android/iOS. Gunakan input manual.',
                   ),
                 ),
               );
@@ -228,17 +247,6 @@ class _HalamanStokState extends State<HalamanStok> {
 
             String? result;
             try {
-              if (isWindowsDesktop) {
-                result = await SimpleBarcodeScanner.scanBarcode(context);
-                if (result == null || result.isEmpty || result == '-1') {
-                  return;
-                }
-                if (!context.mounted) return;
-                setModalState(() {
-                  barcodeC.text = result!;
-                });
-                return;
-              }
               result = await showDialog<String>(
                 context: context,
                 builder: (dialogContext) {
@@ -771,6 +779,7 @@ class _HalamanStokState extends State<HalamanStok> {
                   onPressed: () async {
                     final missing = <String>[];
                     final namaText = namaC.text.trim();
+                    final barcodeText = barcodeC.text.trim();
                     final hargaModalText = hargaModalC.text.trim();
                     final hargaText = hargaC.text.trim();
                     if (namaText.isEmpty) {
@@ -813,6 +822,28 @@ class _HalamanStokState extends State<HalamanStok> {
                     final hargaModal = parseAngka(hargaModalC.text);
                     try {
                       if (produk == null) {
+                        final normalizedNama = normalizeNama(namaText);
+                        final normalizedBarcode =
+                            normalizeBarcode(barcodeText);
+                        final namaSudahAda = kategoriList.any(
+                          (item) => normalizeNama(item.nama) == normalizedNama,
+                        );
+                        final barcodeSudahAda = normalizedBarcode.isNotEmpty &&
+                            kategoriList.any(
+                              (item) =>
+                                  normalizeBarcode(item.barcode) ==
+                                  normalizedBarcode,
+                            );
+                        if (namaSudahAda || barcodeSudahAda) {
+                          if (!context.mounted) return;
+                          AppFeedback.show(
+                            context,
+                            message: 'Barang sudah tersedia',
+                            type: AppFeedbackType.error,
+                          );
+                          return;
+                        }
+
                         final stokAwal = int.tryParse(stokAwalC.text) ?? 0;
                         final diskonMinQty =
                             int.tryParse(diskonMinQtyC.text) ?? 0;
@@ -822,8 +853,8 @@ class _HalamanStokState extends State<HalamanStok> {
                         final diskonHarga = parseAngka(diskonHargaC.text);
 
                         final p = Produk(
-                          nama: namaC.text,
-                          barcode: barcodeC.text,
+                          nama: namaText,
+                          barcode: barcodeText,
                           kategori: kategoriC.text.trim().isEmpty
                               ? 'Lainnya'
                               : kategoriC.text.trim(),
@@ -852,8 +883,8 @@ class _HalamanStokState extends State<HalamanStok> {
                         final diskonHarga = parseAngka(diskonHargaC.text);
                         final p = Produk(
                           id: produk.id,
-                          nama: namaC.text,
-                          barcode: barcodeC.text,
+                          nama: namaText,
+                          barcode: barcodeText,
                           kategori: kategoriC.text.trim().isEmpty
                               ? 'Lainnya'
                               : kategoriC.text.trim(),

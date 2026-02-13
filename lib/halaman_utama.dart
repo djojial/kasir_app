@@ -713,7 +713,6 @@ class _TopBarState extends State<_TopBar> {
   @override
   Widget build(BuildContext context) {
     final surface = _dashSurface(context);
-    final surfaceAlt = _dashSurfaceAlt(context);
     final border = _dashBorder(context);
     final text = _dashText(context);
     final muted = _dashMuted(context);
@@ -762,16 +761,23 @@ class _TopBarState extends State<_TopBar> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: surfaceAlt,
+                    color: _dashAccent,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: border),
+                    border: Border.all(color: _dashAccent),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x33000000),
+                        blurRadius: 10,
+                        offset: Offset(0, 5),
+                      ),
+                    ],
                   ),
                   child: Text(
                     label.toUpperCase(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: text,
+                    style: const TextStyle(
+                      color: Colors.black,
                       fontWeight: FontWeight.w700,
                       fontSize: 11,
                     ),

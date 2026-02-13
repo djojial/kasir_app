@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -26,6 +28,9 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
   String? _webError;
   bool _webStarted = false;
   int _restartToken = 0;
+  Timer? _feedbackTimer;
+  String? _feedbackMessage;
+  bool _feedbackSuccess = true;
 
   String? hasilScan;
   Produk? produk;
@@ -46,7 +51,49 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     super.dispose();
+  }
+
+  void _showFeedback({
+    required String message,
+    required bool success,
+  }) {
+    _feedbackTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _feedbackMessage = message;
+      _feedbackSuccess = success;
+    });
+    _feedbackTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() {
+        _feedbackMessage = null;
+      });
+    });
+  }
+
+  void _resetForNextScan({
+    bool clearResult = true,
+    bool restartWeb = true,
+  }) {
+    if (!mounted) return;
+    setState(() {
+      _isProcessing = false;
+      if (clearResult) {
+        hasilScan = null;
+        produk = null;
+      }
+      if (kIsWeb && _webStarted && restartWeb) {
+        _webError = null;
+        _restartToken++;
+      }
+    });
+  }
+
+  void _handleAddToCart(Produk produkDipilih) {
+    widget.onAddToCart?.call(produkDipilih);
+    _resetForNextScan(clearResult: true, restartWeb: true);
   }
 
   Future<void> _prosesBarcode(String kode) async {
@@ -56,18 +103,18 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
     setState(() {
       hasilScan = kode;
       produk = hasil;
+      if (hasil == null) {
+        _isProcessing = false;
+        if (kIsWeb && _webStarted) {
+          _restartToken++;
+        }
+      }
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          hasil != null
-              ? "Produk ditemukan: ${hasil.nama}"
-              : "Produk belum terdaftar",
-        ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: hasil != null ? Colors.green : Colors.red,
-      ),
+    _showFeedback(
+      message: hasil != null
+          ? "Produk ditemukan: ${hasil.nama}"
+          : "Produk belum terdaftar",
+      success: hasil != null,
     );
   }
 
@@ -199,10 +246,11 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
           final hasilCard = _HasilScanCard(
             produk: produk,
             hasilScan: hasilScan,
-            onAddToCart: widget.onAddToCart,
+            onAddToCart:
+                widget.onAddToCart == null ? null : _handleAddToCart,
           );
 
-          return Padding(
+          final content = Padding(
             padding: const EdgeInsets.all(24),
             child: isNarrow
                 ? Column(
@@ -219,6 +267,22 @@ class _HalamanScanBarcodeState extends State<HalamanScanBarcode> {
                       Expanded(flex: 2, child: hasilCard),
                     ],
                   ),
+          );
+
+          return Stack(
+            children: [
+              content,
+              if (_feedbackMessage != null)
+                Positioned(
+                  top: 8,
+                  left: 24,
+                  right: 24,
+                  child: _ScanFeedbackBanner(
+                    message: _feedbackMessage!,
+                    success: _feedbackSuccess,
+                  ),
+                ),
+            ],
           );
         },
       ),
@@ -424,6 +488,52 @@ class _CameraErrorPanel extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ScanFeedbackBanner extends StatelessWidget {
+  final String message;
+  final bool success;
+
+  const _ScanFeedbackBanner({
+    required this.message,
+    required this.success,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final backgroundColor =
+        success ? const Color(0xFF1F8B4C) : const Color(0xFFB42318);
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: _luxShadow(context),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              success ? Icons.check_circle : Icons.error_outline,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

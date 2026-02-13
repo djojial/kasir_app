@@ -38,7 +38,22 @@ class _HalamanPOSState extends State<HalamanPOS> {
   Timer? _emptyReloadTimer;
   bool _showEmptyReload = false;
   Map<String, String>? _actorCache;
+
+  bool get _isDesktopPlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux);
+
   Future<void> _openScanDialog() async {
+    if (kIsWeb || _isDesktopPlatform) {
+      _snack(
+        'Harap sambungkan dengan Perankat Scan',
+        Colors.orange,
+      );
+      return;
+    }
+
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -1552,35 +1567,51 @@ class _HalamanPOSState extends State<HalamanPOS> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         final radius = BorderRadius.circular(24);
-        return DraggableScrollableSheet(
-          initialChildSize: 0.65,
-          minChildSize: 0.35,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (context, controller) {
-            return Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.vertical(top: radius.topLeft),
-                border: Border.all(color: Theme.of(context).dividerColor),
-              ),
-              child: SingleChildScrollView(
-                controller: controller,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                child: _TransaksiTable(
-                  items: keranjang,
-                  subtotal: subtotalBayar,
-                  diskon: diskonBayar,
-                  totalBayar: totalBayar,
-                  onBayar: _openPaymentSheet,
-                  getHargaItem: _itemHarga,
-                  getDiskonItem: _itemDiskon,
-                  getTotalItem: _itemTotal,
-                  onTambah: tambahQty,
-                  onKurang: kurangiQty,
-                  compact: true,
-                ),
-              ),
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.65,
+              minChildSize: 0.35,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (context, controller) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.vertical(top: radius.topLeft),
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                  ),
+                  child: SingleChildScrollView(
+                    controller: controller,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    child: _TransaksiTable(
+                      items: keranjang,
+                      subtotal: subtotalBayar,
+                      diskon: diskonBayar,
+                      totalBayar: totalBayar,
+                      onBayar: () async {
+                        await _openPaymentSheet();
+                        if (!mounted) return;
+                        setSheetState(() {});
+                      },
+                      getHargaItem: _itemHarga,
+                      getDiskonItem: _itemDiskon,
+                      getTotalItem: _itemTotal,
+                      onTambah: (item) {
+                        tambahQty(item);
+                        if (!mounted) return;
+                        setSheetState(() {});
+                      },
+                      onKurang: (item) {
+                        kurangiQty(item);
+                        if (!mounted) return;
+                        setSheetState(() {});
+                      },
+                      compact: true,
+                    ),
+                  ),
+                );
+              },
             );
           },
         );
